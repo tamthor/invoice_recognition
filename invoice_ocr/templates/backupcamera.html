@@ -1,0 +1,870 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="text-center">Camera Scanner</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Camera selection -->
+                    <div class="form-group mb-2">
+                        <label for="cameraSelect" class="small">Chọn Camera:</label>
+                        <select id="cameraSelect" class="form-control form-control-sm mb-2">
+                            <option value="">Đang tải danh sách camera...</option>
+                        </select>
+                    </div>
+
+                    <!-- Camera container với khung căn chỉnh -->
+                    <div id="camera-container" class="position-relative" style="display: none;">
+                        <video id="video" class="w-100" playsinline autoplay></video>
+                        <!-- Overlay tối xung quanh khung -->
+                        <div class="scan-overlay"></div>
+                        <!-- Khung căn chỉnh A5 -->
+                        <div id="alignment-frame">
+                            <div class="corner top-left"></div>
+                            <div class="corner top-right"></div>
+                            <div class="corner bottom-left"></div>
+                            <div class="corner bottom-right"></div>
+                            <div class="guide-text">Căn chỉnh hóa đơn vào khung</div>
+                        </div>
+                        <!-- Canvas cho xử lý độ sáng -->
+                        <canvas id="canvasOutput" style="display: none;"></canvas>
+                    </div>
+                    
+                    <!-- Canvas để chụp ảnh (ẩn) -->
+                    <canvas id="canvas" style="display:none;"></canvas>
+                    
+                    <!-- Nút điều khiển -->
+                    <div class="text-center mt-2">
+                        <button id="startButton" class="btn btn-sm btn-primary">Mở Camera</button>
+                        <button id="stopButton" class="btn btn-sm btn-danger" style="display: none;">Tắt Camera</button>
+                    </div>
+
+                    <!-- Thông báo trạng thái -->
+                    <div id="status" class="alert alert-sm mt-2" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Panel hiển thị dữ liệu trích xuất -->
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-header py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">Thông tin hóa đơn</h6>
+                        <span class="badge bg-primary" id="invoice-status">Đang chờ quét...</span>
+                    </div>
+                </div>
+                <div class="card-body p-2">
+                    <!-- Thông tin nhà cung cấp -->
+                    <div class="supplier-info mb-2">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <div class="form-group mb-0">
+                                    <label class="form-label small text-muted mb-1">Mã nhà cung cấp</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" class="form-control form-control-sm" id="supplier-code" readonly>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="form-group mb-0">
+                                    <label class="form-label small text-muted mb-1">Tên nhà cung cấp</label>
+                                    <input type="text" class="form-control form-control-sm" id="supplier-name" readonly>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group mb-0">
+                                    <label class="form-label small text-muted mb-1">Số phiếu</label>
+                                    <input type="text" class="form-control form-control-sm" id="invoice-number" readonly>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bảng sản phẩm -->
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-center" style="width: 40px">STT</th>
+                                    <th style="width: 80px">Mã hàng</th>
+                                    <th>Tên hàng</th>
+                                    <th style="width: 80px">ĐVT</th>
+                                    <th style="width: 80px" class="text-end">Số lượng</th>
+                                </tr>
+                            </thead>
+                            <tbody id="product-list">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-2">
+                                        <i class="fas fa-receipt me-1"></i>Chưa có dữ liệu
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    :root {
+        --frame-width: 45%;
+        --frame-height: 65%;
+        --camera-height: 60vh;
+    }
+
+    #camera-container {
+        width: var(--camera-height);
+        max-width: 100%;
+        margin: 0 auto;
+        position: relative;
+        overflow: hidden;
+        height: var(--camera-height);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        aspect-ratio: 9/16;
+        min-height: 400px;
+        max-height: 600px;
+    }
+    
+    #video {
+        width: 100%;
+        height: 100%;
+        max-height: var(--camera-height);
+        background-color: #000;
+        object-fit: contain;
+        aspect-ratio: 9/16;
+        min-height: 400px;
+        max-height: 600px;
+    }
+
+    .scan-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        pointer-events: none;
+    }
+    
+    #alignment-frame {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: var(--frame-width);
+        height: var(--frame-height);
+        border: 2px solid rgba(255, 255, 255, 0.5);
+        box-sizing: border-box;
+        pointer-events: none;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    }
+
+    .guide-text {
+        position: absolute;
+        width: 100%;
+        text-align: center;
+        color: white;
+        font-size: 12px;
+        top: -20px;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    .corner {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        border: 2px solid rgba(255, 255, 255, 0.8);
+    }
+
+    .top-left {
+        top: -2px;
+        left: -2px;
+        border-right: none;
+        border-bottom: none;
+    }
+
+    .top-right {
+        top: -2px;
+        right: -2px;
+        border-left: none;
+        border-bottom: none;
+    }
+
+    .bottom-left {
+        bottom: -2px;
+        left: -2px;
+        border-right: none;
+        border-top: none;
+    }
+
+    .bottom-right {
+        bottom: -2px;
+        right: -2px;
+        border-left: none;
+        border-top: none;
+    }
+
+    @media (max-width: 768px) {
+        :root {
+            --frame-width: 85%;
+            --frame-height: 95%;
+        }
+
+        .guide-text {
+            font-size: 10px;
+            top: -15px;
+        }
+    }
+
+    @keyframes alignSuccess {
+        0% { border-color: rgba(255, 255, 255, 0.5); }
+        50% { border-color: rgba(40, 167, 69, 0.8); }
+        100% { border-color: rgba(255, 255, 255, 0.5); }
+    }
+
+    .aligned {
+        animation: alignSuccess 1s infinite;
+    }
+    
+    /* Style cho card camera scanner - cố định kích thước */
+    .col-md-4 .card {
+        width: 450px;
+        min-width: 450px;
+        max-width: 450px;
+        margin: 0 auto;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .col-md-4 .card-header {
+        padding: 0.5rem;
+    }
+    
+    .col-md-4 .card-body {
+        padding: 0.75rem;
+    }
+    
+    /* Style cho alert */
+    .alert-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    /* Style cho panel thông tin hóa đơn */
+    .col-md-8 {
+        min-width: 600px; /* Đảm bảo không bị quá nhỏ */
+    }
+
+    .col-md-8 .card {
+        height: 100%;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .col-md-8 .card-header {
+        padding: 0.5rem;
+        background-color: #fff;
+        border-bottom: 1px solid rgba(0,0,0,.125);
+    }
+
+    .col-md-8 .card-body {
+        padding: 0.75rem;
+    }
+
+    /* Style cho supplier info */
+    .supplier-info {
+        background-color: #f8f9fa;
+        padding: 0.75rem;
+        border-radius: 0.25rem;
+        margin-bottom: 0.75rem;
+    }
+
+    /* Style cho bảng sản phẩm */
+    .table {
+        font-size: 0.813rem;
+        margin-bottom: 0;
+    }
+
+    .table th {
+        font-weight: 600;
+        background-color: #f8f9fa;
+        padding: 0.5rem;
+        white-space: nowrap;
+    }
+
+    .table td {
+        padding: 0.5rem;
+        vertical-align: middle;
+    }
+
+    /* Style cho form controls */
+    .form-control-sm {
+        height: calc(1.5em + 0.5rem + 1px);
+        padding: 0.25rem 0.5rem;
+        font-size: 0.813rem;
+    }
+
+    .form-label {
+        margin-bottom: 0.25rem;
+    }
+
+    /* Style cho invoice status badge */
+    #invoice-status {
+        font-size: 0.75rem;
+        padding: 0.35em 0.65em;
+    }
+
+    /* Container styles */
+    .container-fluid {
+        min-width: 1100px; /* Đảm bảo tổng chiều rộng tối thiểu */
+        padding: 1rem;
+    }
+
+    .row {
+        margin: 0 -0.5rem;
+    }
+
+    .col-md-4, .col-md-8 {
+        padding: 0 0.5rem;
+    }
+</style>
+
+<script>
+let video = document.getElementById('video');
+let canvas = document.getElementById('canvas');
+let canvasOutput = document.getElementById('canvasOutput');
+let startButton = document.getElementById('startButton');
+let stopButton = document.getElementById('stopButton');
+let cameraSelect = document.getElementById('cameraSelect');
+let cameraContainer = document.getElementById('camera-container');
+let statusDiv = document.getElementById('status');
+let stream = null;
+let captureTimeout = null;
+let isAligned = false;
+let lastAlignmentTime = 0;
+let isCapturing = false;
+let countdownInterval = null;
+let countdown = 3;
+let previousFrame = null;
+let motionThreshold = 30; // Ngưỡng phát hiện chuyển động
+
+// Hiển thị thông báo trạng thái
+function showStatus(message, type = 'info') {
+    statusDiv.textContent = message;
+    statusDiv.className = `alert alert-${type} mt-3`;
+    statusDiv.style.display = 'block';
+}
+
+// Kiểm tra chuyển động trong khung
+function checkMotion(currentFrame, frameX, frameY, frameWidth, frameHeight) {
+    if (!previousFrame) {
+        previousFrame = currentFrame;
+        return false;
+    }
+
+    let motionDetected = false;
+    const frameData = currentFrame.data;
+    const prevData = previousFrame.data;
+    
+    // Chỉ kiểm tra trong vùng khung
+    for (let y = frameY; y < frameY + frameHeight; y++) {
+        for (let x = frameX; x < frameX + frameWidth; x++) {
+            const idx = (y * canvasOutput.width + x) * 4;
+            
+            // Tính độ khác biệt giữa frame hiện tại và frame trước
+            const diffR = Math.abs(frameData[idx] - prevData[idx]);
+            const diffG = Math.abs(frameData[idx + 1] - prevData[idx + 1]);
+            const diffB = Math.abs(frameData[idx + 2] - prevData[idx + 2]);
+            
+            // Nếu có sự khác biệt lớn, coi như có chuyển động
+            if (diffR > motionThreshold || diffG > motionThreshold || diffB > motionThreshold) {
+                motionDetected = true;
+                break;
+            }
+        }
+        if (motionDetected) break;
+    }
+    
+    previousFrame = currentFrame;
+    return motionDetected;
+}
+
+// Kiểm tra căn chỉnh hóa đơn trong khung
+function checkAlignment() {
+    if (!stream || isCapturing) return;
+    
+    try {
+        const ctx = canvasOutput.getContext('2d');
+        const frame = document.getElementById('alignment-frame');
+        const rect = frame.getBoundingClientRect();
+        const videoRect = video.getBoundingClientRect();
+        
+        // Tính toán tỷ lệ scale giữa video và canvas
+        const scaleX = video.videoWidth / videoRect.width;
+        const scaleY = video.videoHeight / videoRect.height;
+        
+        // Tính toán vị trí và kích thước thực của khung trong video
+        const frameX = (rect.left - videoRect.left) * scaleX;
+        const frameY = (rect.top - videoRect.top) * scaleY;
+        const frameWidth = rect.width * scaleX;
+        const frameHeight = rect.height * scaleY;
+        
+        // Vẽ frame hiện tại vào canvas
+        canvasOutput.width = video.videoWidth;
+        canvasOutput.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        
+        // Lấy dữ liệu pixel trong khung
+        const frameImageData = ctx.getImageData(frameX, frameY, frameWidth, frameHeight);
+        const frameData = frameImageData.data;
+        
+        // Tính toán độ sáng trung bình trong khung
+        let totalFrameBrightness = 0;
+        for (let i = 0; i < frameData.length; i += 4) {
+            const r = frameData[i];
+            const g = frameData[i + 1];
+            const b = frameData[i + 2];
+            totalFrameBrightness += (r + g + b) / 3;
+        }
+        const averageFrameBrightness = totalFrameBrightness / (frameData.length / 4);
+        
+        // Lấy dữ liệu pixel bên ngoài khung
+        const outsideImageData = ctx.getImageData(0, 0, canvasOutput.width, canvasOutput.height);
+        const outsideData = outsideImageData.data;
+        
+        // Tạo mask cho vùng bên ngoài khung
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = video.videoWidth;
+        maskCanvas.height = video.videoHeight;
+        const maskCtx = maskCanvas.getContext('2d');
+        
+        // Vẽ hình chữ nhật đen cho toàn bộ canvas
+        maskCtx.fillStyle = 'black';
+        maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+        
+        // Xóa phần khung (để trắng)
+        maskCtx.clearRect(frameX, frameY, frameWidth, frameHeight);
+        
+        // Tính toán độ sáng trung bình bên ngoài khung
+        let totalOutsideBrightness = 0;
+        let outsidePixelCount = 0;
+        
+        for (let i = 0; i < outsideData.length; i += 4) {
+            const maskIdx = i / 4;
+            const x = (maskIdx % maskCanvas.width);
+            const y = Math.floor(maskIdx / maskCanvas.width);
+            
+            // Kiểm tra nếu pixel nằm ngoài khung
+            if (x < frameX || x > frameX + frameWidth || y < frameY || y > frameY + frameHeight) {
+                const r = outsideData[i];
+                const g = outsideData[i + 1];
+                const b = outsideData[i + 2];
+                totalOutsideBrightness += (r + g + b) / 3;
+                outsidePixelCount++;
+            }
+        }
+        
+        const averageOutsideBrightness = outsidePixelCount > 0 ? 
+            totalOutsideBrightness / outsidePixelCount : 0;
+        
+        // Tính độ tương phản giữa vùng trong và ngoài khung
+        const contrast = averageFrameBrightness - averageOutsideBrightness;
+        
+        // Ngưỡng độ tương phản để xác định hóa đơn
+        const contrastThreshold = 50;
+        
+        const now = Date.now();
+        
+        // Kiểm tra chuyển động trong khung
+        const currentFrame = ctx.getImageData(0, 0, canvasOutput.width, canvasOutput.height);
+        const hasMotion = checkMotion(currentFrame, frameX, frameY, frameWidth, frameHeight);
+        
+        if (contrast > contrastThreshold) {
+            if (!isAligned) {
+                isAligned = true;
+                document.getElementById('alignment-frame').classList.add('aligned');
+                showStatus('Đã phát hiện hóa đơn! Giữ yên...', 'success');
+                
+                // Bắt đầu đếm ngược
+                countdown = 5;
+                if (countdownInterval) clearInterval(countdownInterval);
+                countdownInterval = setInterval(() => {
+                    if (countdown > 0) {
+                        showStatus(`Giữ yên! Chụp sau ${countdown} giây...`, 'success');
+                        countdown--;
+                    } else {
+                        clearInterval(countdownInterval);
+                        captureImage();
+                        isAligned = false;
+                        document.getElementById('alignment-frame').classList.remove('aligned');
+                    }
+                }, 1000);
+            }
+        } else {
+            if (isAligned) {
+                isAligned = false;
+                document.getElementById('alignment-frame').classList.remove('aligned');
+                showStatus('Di chuyển hóa đơn vào khung', 'warning');
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+            }
+        }
+        
+        // Kiểm tra chuyển động và hủy đếm ngược nếu có
+        if (isAligned && hasMotion) {
+            isAligned = false;
+            document.getElementById('alignment-frame').classList.remove('aligned');
+            showStatus('Phát hiện chuyển động! Vui lòng giữ yên hóa đơn', 'warning');
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+        }
+        
+    } catch (err) {
+        console.error('Error in checkAlignment:', err);
+    }
+    
+    captureTimeout = requestAnimationFrame(checkAlignment);
+}
+
+// Lấy danh sách camera
+async function getCameraDevices() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        cameraSelect.innerHTML = '';
+        
+        // Hiển thị thông tin debug về các thiết bị camera
+        console.log('Danh sách thiết bị camera:', videoDevices.map(d => ({id: d.deviceId, label: d.label})));
+        
+        videoDevices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            
+            // Cải thiện nhận diện các loại camera
+            if (device.label.includes('Camo') || device.label.includes('camo') || 
+                device.label.includes('DroidCam') || device.label.includes('droidcam') ||
+                device.label.includes('EpocCam') || device.label.includes('epoccam') ||
+                device.label.includes('iRun') || device.label.includes('irun')) {
+                option.text = 'Camera điện thoại (Camo/iRun)';
+            } else {
+                option.text = device.label || `Camera ${cameraSelect.length + 1}`;
+            }
+            cameraSelect.appendChild(option);
+        });
+
+        if (videoDevices.length === 0) {
+            showStatus('Không tìm thấy camera nào. Vui lòng kiểm tra lại Camo Studio hoặc cấp quyền truy cập camera.', 'warning');
+            startButton.disabled = true;
+        } else {
+            showStatus(`Đã tìm thấy ${videoDevices.length} camera`, 'info');
+        }
+    } catch (err) {
+        console.error('Lỗi khi lấy danh sách camera:', err);
+        showStatus('Lỗi khi tải danh sách camera. Vui lòng kiểm tra lại Camo Studio và quyền truy cập.', 'danger');
+    }
+}
+
+// Khởi tạo khi trang được tải
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // Tăng thời gian chờ khi khởi tạo camera
+        const initialStream = await navigator.mediaDevices.getUserMedia({ 
+            video: true,
+            audio: false
+        });
+        initialStream.getTracks().forEach(track => track.stop());
+        await getCameraDevices();
+    } catch (err) {
+        console.error('Lỗi khởi tạo:', err);
+        
+        // Xử lý lỗi timeout cụ thể
+        if (err.name === 'AbortError' && err.message.includes('Timeout')) {
+            showStatus('Lỗi kết nối camera: Hết thời gian chờ. Vui lòng kiểm tra lại kết nối camera và thử lại.', 'danger');
+        } else {
+            showStatus('Không thể truy cập camera. Vui lòng kiểm tra kết nối và quyền truy cập.', 'danger');
+        }
+    }
+});
+
+// Khởi tạo camera
+async function startCamera() {
+    try {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+
+        // Hiển thị thông báo đang kết nối
+        showStatus('Đang kết nối với camera...', 'info');
+
+        const constraints = {
+            video: {
+                deviceId: cameraSelect.value ? { exact: cameraSelect.value } : undefined,
+                width: { ideal: 1080 },
+                height: { ideal: 1920 },
+                facingMode: 'environment'
+            }
+        };
+
+        // Thử kết nối với camera
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        
+        // Đợi video sẵn sàng
+        await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new Error('Timeout khi đợi video sẵn sàng'));
+            }, 20000);
+            
+            video.onloadedmetadata = () => {
+                clearTimeout(timeoutId);
+                
+                // Tính toán kích thước container dựa trên chiều cao cố định
+                const containerHeight = window.innerHeight * 0.6; // 60vh
+                
+                // Đặt kích thước cho container - chiều rộng bằng chiều cao
+                cameraContainer.style.height = `${containerHeight}px`;
+                cameraContainer.style.width = `${containerHeight}px`;
+                
+                // Đặt kích thước cho video
+                video.style.width = '100%';
+                video.style.height = '100%';
+                
+                video.play()
+                    .then(resolve)
+                    .catch(reject);
+            };
+        });
+        
+        cameraContainer.style.display = 'block';
+        startButton.style.display = 'none';
+        stopButton.style.display = 'inline-block';
+        
+        isCapturing = false;
+        isAligned = false;
+        
+        checkAlignment();
+        
+        showStatus('Camera đang hoạt động', 'success');
+    } catch (err) {
+        console.error("Không thể truy cập camera:", err);
+        
+        let errorMessage = 'Không thể truy cập camera. ';
+        
+        if (err.name === 'AbortError' && err.message.includes('Timeout')) {
+            errorMessage += 'Hết thời gian chờ kết nối. Vui lòng kiểm tra lại kết nối camera và thử lại.';
+        } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            errorMessage += 'Quyền truy cập camera bị từ chối. Vui lòng cấp quyền truy cập camera trong cài đặt trình duyệt.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+            errorMessage += 'Không tìm thấy camera. Vui lòng kiểm tra kết nối camera.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+            errorMessage += 'Camera đang được sử dụng bởi ứng dụng khác. Vui lòng đóng các ứng dụng đang sử dụng camera.';
+        } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+            errorMessage += 'Không thể đáp ứng các yêu cầu về camera. Vui lòng thử lại với cài đặt khác.';
+        } else if (err.name === 'TypeError') {
+            errorMessage += 'Lỗi cú pháp. Vui lòng thử lại.';
+        } else {
+            errorMessage += 'Vui lòng kiểm tra kết nối và quyền truy cập.';
+        }
+        
+        showStatus(errorMessage, 'danger');
+        
+        startButton.style.display = 'inline-block';
+        stopButton.style.display = 'none';
+    }
+}
+
+// Dừng camera
+function stopCamera() {
+    isCapturing = false;
+    
+    if (captureTimeout) {
+        cancelAnimationFrame(captureTimeout);
+        captureTimeout = null;
+    }
+
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+        cameraContainer.style.display = 'none';
+        startButton.style.display = 'inline-block';
+        stopButton.style.display = 'none';
+        
+        showStatus('Camera đã được tắt', 'info');
+    }
+}
+
+// Thêm hàm xử lý dữ liệu trích xuất
+function updateExtractedData(data) {
+    // Cập nhật thông tin nhà cung cấp
+    document.getElementById('supplier-code').value = data.supplier_code || '';
+    document.getElementById('supplier-name').value = data.supplier_name || '';
+    document.getElementById('invoice-number').value = data.invoice_number || '';
+    
+    // Cập nhật trạng thái
+    const statusBadge = document.getElementById('invoice-status');
+    statusBadge.textContent = 'Đã quét';
+    statusBadge.className = 'badge bg-success';
+    
+    // Cập nhật bảng sản phẩm
+    const productList = document.getElementById('product-list');
+    productList.innerHTML = '';
+    
+    if (data.products && data.products.length > 0) {
+        data.products.forEach((product, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="text-center">${index + 1}</td>
+                <td>${product.code || ''}</td>
+                <td>${product.name || ''}</td>
+                <td>${product.unit || ''}</td>
+                <td class="text-end">${product.quantity || '0'}</td>
+            `;
+            productList.appendChild(row);
+        });
+    } else {
+        productList.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-muted">
+                    <i class="fas fa-exclamation-circle me-2"></i>Không tìm thấy sản phẩm
+                </td>
+            </tr>
+        `;
+    }
+}
+
+// Sửa đổi hàm captureImage để gọi API trích xuất
+function captureImage() {
+    if (isCapturing) return;
+    isCapturing = true;
+
+    // Tạo canvas tạm thời để xử lý ảnh
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Đặt kích thước canvas tạm thời bằng với kích thước video
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+    
+    // Vẽ ảnh từ video vào canvas tạm thời
+    tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+    
+    // Đặt kích thước canvas chính bằng với kích thước video
+    canvas.width = tempCanvas.width;
+    canvas.height = tempCanvas.height;
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Vẽ ảnh từ canvas tạm thời vào canvas chính mà không xoay
+    ctx.drawImage(tempCanvas, 0, 0);
+    
+    canvas.toBlob(function(blob) {
+        const formData = new FormData();
+        formData.append('image', blob, 'capture.jpg');
+        
+        // Hiển thị trạng thái đang xử lý
+        const statusBadge = document.getElementById('invoice-status');
+        statusBadge.textContent = 'Đang xử lý...';
+        statusBadge.className = 'badge bg-warning';
+        
+        fetch('/save_image/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showStatus('Đã chụp và lưu ảnh thành công!', 'success');
+                
+                // Gọi API trích xuất dữ liệu
+                return fetch('/extract_data/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        image_path: data.image_path
+                    })
+                });
+            } else {
+                throw new Error('Lỗi khi lưu ảnh');
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateExtractedData(data.extracted_data);
+                showStatus('Đã trích xuất dữ liệu thành công!', 'success');
+            } else {
+                throw new Error(data.message || 'Lỗi khi trích xuất dữ liệu');
+            }
+        })
+        .catch(error => {
+            console.error('Lỗi:', error);
+            showStatus(error.message || 'Lỗi khi xử lý ảnh!', 'danger');
+            
+            // Cập nhật trạng thái lỗi
+            const statusBadge = document.getElementById('invoice-status');
+            statusBadge.textContent = 'Lỗi';
+            statusBadge.className = 'badge bg-danger';
+        })
+        .finally(() => {
+            isCapturing = false;
+            stopCamera();
+        });
+    }, 'image/jpeg', 0.95);
+}
+
+// Hàm lấy CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Event listeners
+startButton.addEventListener('click', startCamera);
+stopButton.addEventListener('click', stopCamera);
+cameraSelect.addEventListener('change', () => {
+    if (stream) {
+        startCamera();
+    }
+});
+
+// Theo dõi thay đổi thiết bị
+navigator.mediaDevices.addEventListener('devicechange', async () => {
+    await getCameraDevices();
+});
+</script>
+
+{% endblock %}
