@@ -8,8 +8,15 @@ class UserManager(BaseUserManager):
     def create_user(self, username, email, password=None, **extra_fields):
         if not email:
             raise ValueError("Người dùng phải có email")
+        if not username:
+            raise ValueError("Người dùng phải có username")
+            
         email = self.normalize_email(email)
-        user = self.model(username=username, email=email, **extra_fields)
+        user = self.model(
+            username=username,
+            email=email,
+            **extra_fields
+        )
         user.set_password(password)
         user.save(using=self._db)
         return user
@@ -17,14 +24,24 @@ class UserManager(BaseUserManager):
     def create_superuser(self, username, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("is_active", True)
+
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+
         return self.create_user(username, email, password, **extra_fields)
 
 # Bảng Tài Khoản Người Dùng
 class UserAccount(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=150, unique=True)
     email = models.EmailField(unique=True)
+    first_name = models.CharField(max_length=30, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(auto_now_add=True)
 
     groups = models.ManyToManyField(Group, related_name="useraccount_groups", blank=True)
     user_permissions = models.ManyToManyField(Permission, related_name="useraccount_permissions", blank=True)
@@ -36,6 +53,12 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.username
+
+    def get_full_name(self):
+        return f"{self.first_name} {self.last_name}".strip()
+
+    def get_short_name(self):
+        return self.first_name
 
 # Bảng Nhà Cung Cấp
 class Supplier(models.Model):
@@ -180,3 +203,95 @@ def update_inventory(product_id, quantity):
 
     except Exception as e:
         return f"Lỗi: {str(e)}"
+
+def process_invoice_data(supplier_id, order_number, receipt_date, product_data_list):
+    """
+    Xử lý dữ liệu sau khi nhận dạng từ hóa đơn
+    
+    Args:
+        supplier_id (str): Mã nhà cung cấp
+        order_number (str): Số hóa đơn
+        receipt_date (date): Ngày hóa đơn
+        product_data_list (list): Danh sách sản phẩm với cấu trúc [ma_hang, so_luong]
+    
+    Returns:
+        dict: Kết quả xử lý với các thông tin:
+            - success: True/False
+            - message: Thông báo kết quả
+            - details: Chi tiết các sản phẩm đã xử lý
+    """
+    try:
+        # Kiểm tra nhà cung cấp có tồn tại không
+        supplier = Supplier.objects.filter(supplier_id=supplier_id).first()
+        if not supplier:
+            return {
+                'success': False,
+                'message': 'Nhà cung cấp không tồn tại',
+                'details': []
+            }
+            
+        # Kiểm tra số hóa đơn đã tồn tại chưa
+        if WarehouseReceipt.objects.filter(order_number=order_number).exists():
+            return {
+                'success': False,
+                'message': 'Số hóa đơn đã tồn tại',
+                'details': []
+            }
+            
+        # Tạo phiếu nhập kho mới
+        warehouse_receipt = WarehouseReceipt.objects.create(
+            supplier=supplier,
+            order_number=order_number,
+            receipt_date=receipt_date
+        )
+        
+        processed_products = []
+        skipped_products = []
+        
+        # Xử lý từng sản phẩm
+        for product_data in product_data_list:
+            ma_hang = product_data[0]
+            so_luong = int(product_data[1])
+            
+            # Kiểm tra sản phẩm có tồn tại không
+            product = Product.objects.filter(product_id=ma_hang).first()
+            if not product:
+                skipped_products.append({
+                    'ma_hang': ma_hang,
+                    'reason': 'Sản phẩm không tồn tại'
+                })
+                continue
+                
+            # Cập nhật tồn kho
+            inventory, created = Inventory.objects.get_or_create(product=product)
+            inventory.quantity_in_stock += so_luong
+            inventory.save()
+            
+            # Thêm chi tiết phiếu nhập
+            ReceiptDetail.objects.create(
+                receipt=warehouse_receipt,
+                product=product,
+                quantity=so_luong
+            )
+            
+            processed_products.append({
+                'ma_hang': ma_hang,
+                'ten_hang': product.product_name,
+                'so_luong': so_luong
+            })
+            
+        return {
+            'success': True,
+            'message': 'Xử lý hóa đơn thành công',
+            'details': {
+                'processed_products': processed_products,
+                'skipped_products': skipped_products
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f'Lỗi khi xử lý hóa đơn: {str(e)}',
+            'details': []
+        }

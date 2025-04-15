@@ -86,7 +86,7 @@ def detect_and_filter_columns(cropped_table, min_line_length=50, max_line_gap=10
     
     # Tăng độ dài tối thiểu của đường thẳng để loại bỏ nhiễu
     lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, 
-                           minLineLength=cropped_table.shape[0] * 0.20,  # Ít nhất 50% chiều cao bảng
+                           minLineLength=cropped_table.shape[0] * 0.30,  # Ít nhất 53% chiều cao bảng
                            maxLineGap=10)
 
     # Thu thập tất cả các đường thẳng dọc

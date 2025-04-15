@@ -1,0 +1,264 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Tra cứu thông tin</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Tabs for different search types -->
+                    <ul class="nav nav-tabs" id="searchTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link {% if not search_type or search_type == 'product' %}active{% endif %}" 
+                                    id="product-tab" data-bs-toggle="tab" data-bs-target="#product" type="button" role="tab">
+                                Sản phẩm
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link {% if search_type == 'supplier' %}active{% endif %}" 
+                                    id="supplier-tab" data-bs-toggle="tab" data-bs-target="#supplier" type="button" role="tab">
+                                Nhà cung cấp
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link {% if search_type == 'receipt' %}active{% endif %}" 
+                                    id="receipt-tab" data-bs-toggle="tab" data-bs-target="#receipt" type="button" role="tab">
+                                Hóa đơn
+                            </button>
+                        </li>
+                    </ul>
+
+                    <!-- Tab contents -->
+                    <div class="tab-content mt-3" id="searchTabContent">
+                        <!-- Product Search -->
+                        <div class="tab-pane fade {% if not search_type or search_type == 'product' %}show active{% endif %}" 
+                             id="product" role="tabpanel">
+                            <form method="GET" action="{% url 'search' %}">
+                                <input type="hidden" name="type" value="product">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <input type="text" class="form-control" name="product_id" placeholder="Mã sản phẩm">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <input type="text" class="form-control" name="product_name" placeholder="Tên sản phẩm">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" class="btn btn-primary w-100">Tìm kiếm</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Supplier Search -->
+                        <div class="tab-pane fade {% if search_type == 'supplier' %}show active{% endif %}" 
+                             id="supplier" role="tabpanel">
+                            <form method="GET" action="{% url 'search' %}">
+                                <input type="hidden" name="type" value="supplier">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <input type="text" class="form-control" name="supplier_id" placeholder="Mã nhà cung cấp">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <input type="text" class="form-control" name="supplier_name" placeholder="Tên nhà cung cấp">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" class="btn btn-primary w-100">Tìm kiếm</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Receipt Search -->
+                        <div class="tab-pane fade {% if search_type == 'receipt' %}show active{% endif %}" 
+                             id="receipt" role="tabpanel">
+                            <form method="GET" action="{% url 'search' %}">
+                                <input type="hidden" name="type" value="receipt">
+                                <div class="row g-3">
+                                    <div class="col-md-8">
+                                        <input type="text" class="form-control" name="order_number" placeholder="Nhập số hóa đơn">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" class="btn btn-primary w-100">Tìm kiếm</button>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <a href="{% url 'report' %}" class="btn btn-outline-primary">
+                                            <i class="fas fa-chart-bar me-1"></i>Xem báo cáo thống kê
+                                        </a>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Search Results -->
+                    {% if results %}
+                    <div class="mt-4">
+                        <h6 class="mb-3">Kết quả tìm kiếm:</h6>
+                        {% if search_type == 'receipt' %}
+                            {% for receipt in results %}
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <p class="mb-1"><strong>Số hóa đơn:</strong> {{ receipt.order_number }}</p>
+                                            <p class="mb-1"><strong>Ngày nhập:</strong> {{ receipt.receipt_date }}</p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <p class="mb-1"><strong>Mã nhà cung cấp:</strong> {{ receipt.supplier.supplier_id }}</p>
+                                            <p class="mb-1"><strong>Tên nhà cung cấp:</strong> {{ receipt.supplier.supplier_name }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>STT</th>
+                                            <th>Mã SP</th>
+                                            <th>Tên sản phẩm</th>
+                                            <th>Đơn vị tính</th>
+                                            <th class="text-end">Số lượng</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for detail in receipt.receiptdetail_set.all %}
+                                        <tr>
+                                            <td>{{ forloop.counter }}</td>
+                                            <td>{{ detail.product.product_id }}</td>
+                                            <td>{{ detail.product.product_name }}</td>
+                                            <td>{{ detail.product.unit }}</td>
+                                            <td class="text-end">{{ detail.quantity }}</td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">
+                                                <i class="fas fa-info-circle me-1"></i>Không có sản phẩm nào
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        {% if search_type == 'product' %}
+                                        <tr>
+                                            <th>Mã SP</th>
+                                            <th>Tên SP</th>
+                                            <th>Đơn vị tính</th>
+                                            <th>Nhà cung cấp</th>
+                                            <th>Tồn kho</th>
+                                        </tr>
+                                        {% elif search_type == 'supplier' %}
+                                        <tr>
+                                            <th>Mã NCC</th>
+                                            <th>Tên nhà cung cấp</th>
+                                            <th>Số lượng SP</th>
+                                        </tr>
+                                        {% endif %}
+                                    </thead>
+                                    <tbody>
+                                        {% for item in results %}
+                                        <tr>
+                                            {% if search_type == 'product' %}
+                                            <td>{{ item.product_id }}</td>
+                                            <td>{{ item.product_name }}</td>
+                                            <td>{{ item.unit }}</td>
+                                            <td>{{ item.supplier.supplier_name }}</td>
+                                            <td>{{ item.inventory.quantity_in_stock|default:"0" }}</td>
+                                            {% elif search_type == 'supplier' %}
+                                            <td>{{ item.supplier_id }}</td>
+                                            <td>{{ item.supplier_name }}</td>
+                                            <td>{{ item.product_count }}</td>
+                                            {% endif %}
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Custom JS for form handling -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Get radio buttons and fields
+    const searchTypeRadios = document.getElementsByName('search_type');
+    const dateRangeFields = document.querySelectorAll('.date-range-fields');
+    const monthFields = document.querySelectorAll('.month-fields');
+
+    // Add change event listener to radio buttons
+    searchTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            // Hide all fields first
+            dateRangeFields.forEach(field => field.style.display = 'none');
+            monthFields.forEach(field => field.style.display = 'none');
+
+            // Show relevant fields based on selection
+            if (this.value === 'date_range') {
+                dateRangeFields.forEach(field => field.style.display = 'block');
+            } else if (this.value === 'month') {
+                monthFields.forEach(field => field.style.display = 'block');
+            }
+        });
+    });
+
+    // Lấy các tab buttons
+    const productTab = document.getElementById('product-tab');
+    const supplierTab = document.getElementById('supplier-tab');
+    const receiptTab = document.getElementById('receipt-tab');
+
+    // Hàm xóa kết quả tìm kiếm
+    function clearSearchResults() {
+        // Xóa bảng kết quả tìm kiếm
+        const resultsTable = document.querySelector('.table-responsive');
+        if (resultsTable) {
+            const resultsContainer = resultsTable.closest('.mt-4');
+            if (resultsContainer) {
+                resultsContainer.remove();
+            }
+        }
+
+        // Reset form tìm kiếm
+        const searchForms = document.querySelectorAll('form');
+        searchForms.forEach(form => form.reset());
+
+        // Reset radio buttons về mặc định
+        const allReceiptsRadio = document.getElementById('all_receipts');
+        if (allReceiptsRadio) {
+            allReceiptsRadio.checked = true;
+        }
+
+        // Ẩn các trường ngày tháng
+        const dateRangeFields = document.querySelectorAll('.date-range-fields');
+        const monthFields = document.querySelectorAll('.month-fields');
+        dateRangeFields.forEach(field => field.style.display = 'none');
+        monthFields.forEach(field => field.style.display = 'none');
+    }
+
+    // Thêm event listeners cho các tab
+    [productTab, supplierTab, receiptTab].forEach(tab => {
+        if (tab) {
+            tab.addEventListener('click', function() {
+                clearSearchResults();
+            });
+        }
+    });
+});
+</script>
+{% endblock %}

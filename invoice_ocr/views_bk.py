@@ -11,7 +11,7 @@ import json
 from django.conf import settings
 from .services.third import detect_text, process_image, set_detect_img_path
 from .services.image_processing import alignImages
-from .models import Product, Supplier, WarehouseReceipt, Inventory, process_invoice_data
+from .models import Product, Supplier, WarehouseReceipt, Inventory
 from dateutil.relativedelta import relativedelta
 
 def login_view(request):
@@ -102,22 +102,6 @@ def save_image(request):
                             'so_luong': row[1] if row[1] else '0'
                         }
                         extracted_data['data_matrix'].append(product_data)
-                
-                # Thêm dữ liệu vào database nếu có đủ thông tin
-                if result.get('ma_ncc') and result.get('so_don_hang') and result.get('data_matrix'):
-                    process_result = process_invoice_data(
-                        supplier_id=result.get('ma_ncc'),
-                        order_number=result.get('so_don_hang'),
-                        receipt_date=datetime.now().date(),
-                        product_data_list=[[row[0], row[1]] for row in result.get('data_matrix') if row[0] and row[1]]
-                    )
-                    
-                    if process_result['success']:
-                        extracted_data['process_message'] = process_result['message']
-                        extracted_data['processed_products'] = process_result['details']['processed_products']
-                        extracted_data['skipped_products'] = process_result['details']['skipped_products']
-                    else:
-                        extracted_data['process_message'] = process_result['message']
                 
                 return JsonResponse({
                     'success': True,
