@@ -2,6 +2,25 @@
 {% load static %}
 
 {% block content %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+    @media (min-width: 1400px) {
+        .container, .container-lg, .container-md, .container-sm, .container-xl, .container-xxl {
+            max-width: 1320px;
+        }
+    }
+    .bluetheme {
+        background-color: #2487ce;
+    }
+    .hover-highlight:hover {
+        transform: scale(1.05);
+        box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+    }
+</style>
+
 <div class="container mt-4">
     <div class="row">
         <div class="col-12">
@@ -48,12 +67,67 @@
 
                             <div class="col-md-4">
                                 <label class="form-label"><br></label>
-                                <button type="submit" class="btn btn-primary w-100 ">Xem báo cáo</button>
+                                <button type="submit" class="btn btn-primary w-100 bluetheme">Xem báo cáo</button>
                             </div>
                         </div>
                     </form>
-
+                    <hr class="mt-3 mb-3">
+                    
+                    <!-- biểu đồ -->
                     {% if reports %}
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div class="bg-white p-4 shadow rounded">
+                            <h2 class="bluetheme text-white p-2 rounded-t">Thời gian</h2>
+                            <div class="p-4">
+                                {% if request.GET.report_type == 'month' %}
+                                <p class="text-xl font-bold">Tháng: {{ request.GET.month }}</p>
+                                {% else %}
+                                <p class="text-xl font-bold">Từ: {{ request.GET.date_from|default:"-" }} <br>Đến: {{ request.GET.date_to|default:"-" }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-span-2 bg-white p-4 shadow rounded">
+                            <h2 class="bluetheme text-white p-2 rounded-t">Thông tin thống kê</h2>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
+                                <div class="bg-white p-4 shadow rounded text-center hover-highlight transition-transform duration-200">
+                                    <a href="#">
+                                        <p class="text-xl font-bold">Đơn hàng  <i class="fas fa-file-invoice"></i></p>
+                                    </a>
+                                    <p class="text-2xl">{{ reports|length }}</p>
+                                </div>
+                                <div class="bg-white p-4 shadow rounded text-center hover-highlight transition-transform duration-200">
+                                    <a href="#">
+                                        <p class="text-xl font-bold">Sản phẩm  <i class="fas fa-box"></i></p>
+                                    </a>
+                                    <p class="text-2xl">{{ total_products }}</p>
+                                </div>
+                                <div class="bg-white p-4 shadow rounded text-center hover-highlight transition-transform duration-200">
+                                    <a href="#">
+                                        <p class="text-xl font-bold">Nhà cung cấp  <i class="fas fa-truck"></i></p>
+                                    </a>
+                                    <p class="text-2xl">{{ total_suppliers }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-white p-4 shadow rounded">
+                            <h1>Tỉ lệ nhập hàng theo danh mục</h1>
+                            <div class="chart-container" style="position: relative; height: auto; width: 60%; margin: 0 auto;">
+                                <canvas id="categoryChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 shadow rounded">
+                            <h1>Tỉ lệ nhập hàng theo nhà cung cấp</h1>
+                            <div class="chart-container" style="position: relative; height: auto; width: 60%; margin: 0 auto;">
+                                <canvas id="supplierChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="mt-3 mb-3">
+                    <!-- end -->
+                    
+                    <!-- kết quả -->
                     <div class="mt-4">
                         <h6 class="mb-3">Kết quả thống kê:</h6>
                         <div class="table-responsive">
@@ -77,9 +151,8 @@
                                         <td>{{ receipt.supplier.supplier_name }}</td>
                                         <td class="text-end">{{ receipt.receiptdetail_set.count }}</td>
                                         <td class="text-center">
-                                            <a href="{% url 'search' %}?type=receipt&order_number={{ receipt.order_number }}" 
-                                               class="btn btn-sm btn-outline-info">
-                                                <i class="fas fa-eye"></i>
+                                            <a href="{% url 'search' %}?type=receipt&order_number={{ receipt.order_number }}">
+                                            <i class="fas fa-angle-double-right"></i>
                                             </a>
                                         </td>
                                     </tr>
@@ -95,7 +168,6 @@
     </div>
 </div>
 
-<!-- Custom JS for form handling -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Get radio buttons and fields
@@ -118,6 +190,116 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+    
+    {% if reports %}
+    // Vẽ biểu đồ danh mục
+    var ctx = document.getElementById('categoryChart').getContext('2d');
+    var categoryChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: [
+                {% for category in category_data %}
+                    {% if forloop.counter <= 7 %}
+                        "{{ category.category_name }} - {{ category.product_count|floatformat:0 }}%",
+                    {% endif %}
+                {% endfor %}    
+                {% if category_data|length > 7 %}
+                    "Khác - {{ other_categories_count|floatformat:0 }}%",
+                {% endif %}
+            ],
+            datasets: [{
+                label: 'Số lượng sản phẩm theo danh mục',
+                data: [
+                    {% for category in category_data %}
+                        {% if forloop.counter <= 7 %}
+                            {{ category.product_count }},
+                        {% endif %}
+                    {% endfor %}
+                    {% if category_data|length > 7 %}
+                        {{ other_categories_count }},
+                    {% endif %}
+                ],
+                backgroundColor: [
+                    'rgba(54, 162, 235, 0.7)',   // xanh dương
+                    'rgba(255, 206, 86, 0.7)',   // vàng
+                    'rgba(255, 99, 132, 0.7)',   // đỏ
+                    'rgba(153, 102, 255, 0.7)',  // tím
+                    'rgba(255, 159, 64, 0.7)',   // cam
+                    'rgba(75, 192, 192, 0.7)',   // xanh lá
+                    'rgba(199, 199, 199, 0.7)',   // xám
+                    'rgba(83, 102, 255, 0.7)',   // xanh dương đậm
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'right'
+                },
+                title: {
+                    display: true,
+                    text: 'Tỉ lệ nhập hàng theo danh mục'
+                }
+            }
+        }
+    });
+
+    // Vẽ biểu đồ nhà cung cấp
+    var supplierCtx = document.getElementById('supplierChart').getContext('2d');
+    var supplierChart = new Chart(supplierCtx, {
+        type: 'pie',
+        data: {
+            labels: [
+                {% for supplier in supplier_data %}
+                    {% if forloop.counter <= 7 %}
+                        "{{ supplier.supplier_name }} - {{ supplier.product_count|floatformat:0 }}%",
+                    {% endif %}
+                {% endfor %}
+                {% if supplier_data|length > 7 %}
+                    "Khác - {{ other_suppliers_count|floatformat:0 }}%",
+                {% endif %}
+            ],
+            datasets: [{
+                label: 'Số lượng sản phẩm theo nhà cung cấp',
+                data: [
+                    {% for supplier in supplier_data %}
+                        {% if forloop.counter <= 7 %}
+                            {{ supplier.product_count }},
+                        {% endif %}
+                    {% endfor %}
+                    {% if supplier_data|length > 7 %}
+                        {{ other_suppliers_count }},
+                    {% endif %}
+                ],
+                backgroundColor: [
+                    'rgba(54, 162, 235, 0.7)',   // xanh dương
+                    'rgba(255, 206, 86, 0.7)',   // vàng
+                    'rgba(255, 99, 132, 0.7)',   // đỏ
+                    'rgba(153, 102, 255, 0.7)',  // tím
+                    'rgba(255, 159, 64, 0.7)',   // cam
+                    'rgba(75, 192, 192, 0.7)',   // xanh lá
+                    'rgba(199, 199, 199, 0.7)',   // xám
+                    'rgba(83, 102, 255, 0.7)',   // xanh dương đậm
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'right'
+                },
+                title: {
+                    display: true,
+                    text: 'Tỉ lệ nhập hàng theo nhà cung cấp'
+                }
+            }
+        }
+    });
+    {% endif %}
 });
 </script>
 {% endblock %}

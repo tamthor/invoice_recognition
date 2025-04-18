@@ -4,14 +4,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.views import logout_then_login
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Sum
 import os
 from datetime import datetime
 import json
 from django.conf import settings
 from .services.third import detect_text, process_image, set_detect_img_path
 from .services.image_processing import alignImages
-from .models import Product, Supplier, WarehouseReceipt, Inventory, process_invoice_data
+from .models import Product, Supplier, WarehouseReceipt, Inventory, process_invoice_data, ReceiptDetail
 from dateutil.relativedelta import relativedelta
 
 def login_view(request):
@@ -252,7 +252,7 @@ def search(request):
         order_number = request.GET.get('order_number')
         if order_number:
             results = WarehouseReceipt.objects.filter(
-                order_number__icontains=order_number
+                order_number=order_number
             ).select_related('supplier').prefetch_related(
                 'receiptdetail_set',
                 'receiptdetail_set__product'
@@ -308,6 +308,12 @@ def search(request):
 def report(request):
     reports = None
     report_type = request.GET.get('report_type')
+    category_data = []
+    supplier_data = []
+    total_products = 0
+    total_suppliers = 0
+    other_categories_count = 0
+    other_suppliers_count = 0
 
     if report_type == 'date_range':
         date_from = request.GET.get('date_from')
@@ -327,7 +333,78 @@ def report(request):
             except ValueError:
                 pass
 
+    if reports:
+        # Tính tổng số sản phẩm và nhà cung cấp
+        receipt_details = ReceiptDetail.objects.filter(receipt_id__in=reports.values_list('receipt_id', flat=True))
+        total_products = receipt_details.aggregate(Sum('quantity'))['quantity__sum'] or 0
+        
+        # Danh sách nhà cung cấp đã nhập hàng
+        supplier_ids = reports.values_list('supplier_id', flat=True).distinct()
+        total_suppliers = len(supplier_ids)
+        
+        # Tính tỉ lệ sản phẩm theo danh mục
+        category_stats = receipt_details.values(
+            'product__category__category_name'
+        ).annotate(
+            product_count=Sum('quantity')
+        ).order_by('-product_count')
+        
+        # Lấy top 7 danh mục
+        top_categories = list(category_stats[:7])
+        
+        # Tính số lượng sản phẩm còn lại của các danh mục khác
+        if len(category_stats) > 7:
+            other_categories_count = sum(item['product_count'] for item in category_stats[7:])
+        
+        # Xử lý các danh mục None (không có danh mục) và tính phần trăm
+        for item in top_categories:
+            if item['product__category__category_name'] is None:
+                item['product__category__category_name'] = 'Chưa phân loại'
+            percent = round((item['product_count'] / total_products) * 100) if total_products > 0 else 0
+            category_data.append({
+                'category_name': item['product__category__category_name'],
+                'product_count': percent
+            })
+        
+        # Tính phần trăm cho nhóm "Khác"
+        if len(category_stats) > 7 and total_products > 0:
+            other_categories_percent = round((other_categories_count / total_products) * 100)
+            other_categories_count = other_categories_percent
+        
+        # Tính tỉ lệ sản phẩm theo nhà cung cấp
+        supplier_stats = receipt_details.values(
+            'receipt__supplier__supplier_name'
+        ).annotate(
+            product_count=Sum('quantity')
+        ).order_by('-product_count')
+        
+        # Lấy top 7 nhà cung cấp
+        top_suppliers = list(supplier_stats[:7])
+        
+        # Tính số lượng sản phẩm còn lại của các nhà cung cấp khác
+        if len(supplier_stats) > 7:
+            other_suppliers_count = sum(item['product_count'] for item in supplier_stats[7:])
+        
+        # Tính phần trăm cho từng nhà cung cấp
+        for item in top_suppliers:
+            percent = round((item['product_count'] / total_products) * 100) if total_products > 0 else 0
+            supplier_data.append({
+                'supplier_name': item['receipt__supplier__supplier_name'],
+                'product_count': percent
+            })
+            
+        # Tính phần trăm cho nhóm "Khác"
+        if len(supplier_stats) > 7 and total_products > 0:
+            other_suppliers_percent = round((other_suppliers_count / total_products) * 100)
+            other_suppliers_count = other_suppliers_percent
+
     context = {
-        'reports': reports
+        'reports': reports,
+        'category_data': category_data,
+        'supplier_data': supplier_data,
+        'total_products': total_products,
+        'total_suppliers': total_suppliers,
+        'other_categories_count': other_categories_count,
+        'other_suppliers_count': other_suppliers_count
     }
     return render(request, 'report.html', context)
