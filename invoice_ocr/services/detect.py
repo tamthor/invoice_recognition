@@ -91,7 +91,7 @@ def detect_and_filter_columns(cropped_table, min_line_length=50, max_line_gap=10
 
     # Thu thập tất cả các đường thẳng dọc
     vertical_lines = []
-    threshold_angle_error = 10
+    threshold_angle_error = 20
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
@@ -412,9 +412,9 @@ def detect_text():
                     current_row[1] = text
             else:  
                 # Phân loại vào cột tương ứng dựa vào padding (chỉ xét Mã hàng và Số lượng)
-                if ma_hang_pos - stt_width <= x <= ma_hang_pos + stt_width:
+                if ma_hang_pos - stt_width + 10 <= x <= ma_hang_pos + stt_width + 10:
                     current_row[0] = text
-                elif so_luong_pos - stt_width <= x <= so_luong_pos + stt_width:
+                elif so_luong_pos - stt_width + 10 <= x <= so_luong_pos + stt_width + 10:
                     current_row[1] = text
         
         # Thêm hàng cuối

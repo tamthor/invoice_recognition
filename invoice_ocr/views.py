@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 import json
 from django.conf import settings
-from .services.third import detect_text, process_image, set_detect_img_path
+from .services.detect import detect_text, process_image, set_detect_img_path
 from .services.image_processing import alignImages
 from .models import Product, Supplier, WarehouseReceipt, Inventory, process_invoice_data, ReceiptDetail
 from dateutil.relativedelta import relativedelta
@@ -210,9 +210,6 @@ def extract_data(request):
             })
     
     return JsonResponse({'success': False, 'message': 'Phương thức không được hỗ trợ'})
-
-def camera(request):
-    return render(request, 'camera.html')
 
 @login_required(login_url='login')
 def search(request):

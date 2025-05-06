@@ -3,7 +3,7 @@ from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group, Permission
 
-# Quản lý tài khoản người dùng
+# Manage user accounts table
 class UserManager(BaseUserManager):
     def create_user(self, username, email, password=None, **extra_fields):
         if not email:
@@ -33,7 +33,7 @@ class UserManager(BaseUserManager):
 
         return self.create_user(username, email, password, **extra_fields)
 
-# Bảng Tài Khoản Người Dùng
+# User accounts table
 class UserAccount(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=150, unique=True)
     email = models.EmailField(unique=True)
@@ -60,7 +60,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
     def get_short_name(self):
         return self.first_name
 
-# Bảng Nhà Cung Cấp
+# Suppliers table
 class Supplier(models.Model):
     supplier_id = models.AutoField(primary_key=True)
     supplier_name = models.CharField(max_length=200, unique=True)
@@ -69,12 +69,12 @@ class Supplier(models.Model):
         return self.supplier_name
 
     def save(self, *args, **kwargs):
-        if not self.pk:  # Chỉ kiểm tra khi tạo mới
+        if not self.pk:  # Only check when creating new
             if Supplier.objects.filter(supplier_name=self.supplier_name).exists():
                 raise ValidationError(f"Tên nhà cung cấp {self.supplier_name} đã tồn tại.")
         super().save(*args, **kwargs)
 
-# Bảng Danh Mục Sản Phẩm
+# Categories table
 class Category(models.Model):
     category_name = models.CharField(max_length=200, unique=True)
     category_code = models.CharField(
@@ -87,14 +87,14 @@ class Category(models.Model):
         return self.category_name
 
     def save(self, *args, **kwargs):
-        if not self.pk:  # Chỉ kiểm tra khi tạo mới
+        if not self.pk:  # Only check when creating new
             if Category.objects.filter(category_name=self.category_name).exists():
                 raise ValidationError(f"Tên danh mục {self.category_name} đã tồn tại.")
             if Category.objects.filter(category_code=self.category_code).exists():
                 raise ValidationError(f"Mã danh mục {self.category_code} đã tồn tại.")
         super().save(*args, **kwargs)
 
-# Bảng Sản Phẩm
+# Products table
 class Product(models.Model):
     product_id = models.CharField(
         max_length=10,
@@ -110,7 +110,7 @@ class Product(models.Model):
     def __str__(self):
         return self.product_name
 
-# Bảng Phiếu Nhập Kho
+# Receipts table
 class WarehouseReceipt(models.Model):
     receipt_id = models.AutoField(primary_key=True)
     order_number = models.CharField(max_length=100, unique=True)
@@ -121,12 +121,12 @@ class WarehouseReceipt(models.Model):
         return f"Receipt {self.order_number}"
 
     def save(self, *args, **kwargs):
-        if not self.pk:  # Chỉ kiểm tra khi tạo mới
+        if not self.pk:  # Only check when creating new
             if WarehouseReceipt.objects.filter(order_number=self.order_number).exists():
                 raise ValidationError(f"Số hóa đơn {self.order_number} đã tồn tại.")
         super().save(*args, **kwargs)
 
-# Bảng Chi Tiết Phiếu Nhập
+# Receipt details table
 class ReceiptDetail(models.Model):
     detail_id = models.AutoField(primary_key=True)
     receipt = models.ForeignKey(WarehouseReceipt, on_delete=models.CASCADE)
@@ -137,7 +137,7 @@ class ReceiptDetail(models.Model):
         unique_together = ('receipt', 'product')
 
 
-# Bảng Tồn Kho
+# Inventory Table
 class Inventory(models.Model):
     product = models.OneToOneField(Product, on_delete=models.CASCADE, primary_key=True)
     quantity_in_stock = models.IntegerField(default=0, validators=[MinValueValidator(0)])
@@ -146,7 +146,7 @@ class Inventory(models.Model):
         return f"{self.product.product_name}: {self.quantity_in_stock}"
 
 # ------------------------------- #
-#            HÀM HỖ TRỢ           #
+#         SUPPORT FUNCTION        #
 # ------------------------------- #
 
 def add_warehouse_receipt(supplier_id, order_number, receipt_date):
