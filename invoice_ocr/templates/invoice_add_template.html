@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    .bluetheme {
+        background-color: #2487ce;
+    }
+    .bluetheme.text-white h4 {
+        color: white !important;
+    }
+</style>
+<div class="container mt-4">
+    <div class="card shadow">
+        <div class="card-header bluetheme text-white">
+            <h4 class="mb-0">Thêm Mẫu Hóa Đơn Mới</h4>
+        </div>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+                {% csrf_token %}
+
+                
+                <!-- Tên mẫu hóa đơn -->
+                <div class="mb-3">
+                    <label for="name" class="form-label">Tên mẫu hóa đơn <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="invalid-feedback">Vui lòng nhập tên mẫu hóa đơn</div>
+                </div>
+                
+                <!-- Ảnh mẫu hóa đơn -->
+                <div class="mb-3">
+                    <label for="template_image" class="form-label">Tải lên ảnh mẫu <span class="text-danger">*</span></label>
+                    <input type="file" class="form-control" id="template_image" name="template_image" accept="image/*" required>
+                    <div class="invalid-feedback">Vui lòng tải lên ảnh mẫu hóa đơn</div>
+                    <small class="text-muted">Chấp nhận các định dạng: JPG, PNG, JPEG</small>
+                </div>
+                
+                <div class="row">
+                    <!-- Từ khóa nhận dạng mã nhà cung cấp -->
+                    <div class="col-md-6 mb-3">
+                        <label for="supplier_code_keywords" class="form-label">Từ khóa nhận dạng mã nhà cung cấp <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="supplier_code_keywords" name="supplier_code_keywords" 
+                               placeholder="VD: Mã, nhà, cung, cấp" required>
+                        <small class="text-muted">Các từ khóa cách nhau bằng dấu phẩy (,)</small>
+                    </div>
+                    
+                    <!-- Từ khóa nhận dạng số hóa đơn -->
+                    <div class="col-md-6 mb-3">
+                        <label for="invoice_number_keywords" class="form-label">Từ khóa nhận dạng số hóa đơn <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="invoice_number_keywords" name="invoice_number_keywords" 
+                               placeholder="VD: Số, phiếu, giao, hàng" required>
+                        <small class="text-muted">Các từ khóa cách nhau bằng dấu phẩy (,)</small>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <!-- Từ khóa nhận dạng cột mã hàng -->
+                    <div class="col-md-6 mb-3">
+                        <label for="product_code_keywords" class="form-label">Từ khóa nhận dạng cột mã hàng <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="product_code_keywords" name="product_code_keywords" 
+                               placeholder="VD: Mã, hàng, product, code" required>
+                        <small class="text-muted">Các từ khóa cách nhau bằng dấu phẩy (,)</small>
+                    </div>
+                    
+                    <!-- Từ khóa nhận dạng cột số lượng -->
+                    <div class="col-md-6 mb-3">
+                        <label for="quantity_keywords" class="form-label">Từ khóa nhận dạng cột số lượng <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="quantity_keywords" name="quantity_keywords" 
+                               placeholder="VD: Số, lượng, quantity" required>
+                        <small class="text-muted">Các từ khóa cách nhau bằng dấu phẩy (,)</small>
+                    </div>
+                </div>
+                
+                <!-- Số cột trong bảng -->
+                <div class="mb-3">
+                    <label for="num_columns" class="form-label">Số cột trong bảng <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="num_columns" name="num_columns" min="2" value="6" required>
+                    <small class="text-muted">Số cột tối thiểu là 2</small>
+                </div>
+                
+                <div class="mt-4 d-flex justify-content-between">
+                    <a href="{% url 'invoice_templates' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Quay lại
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Lưu Mẫu
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Xác thực form bootstrap
+(function () {
+    'use strict'
+    var forms = document.querySelectorAll('.needs-validation')
+    Array.prototype.slice.call(forms)
+        .forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!form.checkValidity()) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                }
+                form.classList.add('was-validated')
+            }, false)
+        })
+})()
+</script>
+{% endblock %}

@@ -18,6 +18,24 @@
                         </select>
                     </div>
 
+                    <!-- Thêm selectbox chọn mẫu hóa đơn -->
+                    <div class="form-group mb-2">
+                        <label for="templateSelect" class="small">Chọn mẫu hóa đơn:</label>
+                        <select id="templateSelect" class="form-control form-control-sm mb-2">
+                            <option value="">-- Chọn mẫu hóa đơn --</option>
+                            {% for template in invoice_templates %}
+                            <option value="{{ template.id }}" 
+                                data-supplier-keywords="{{ template.get_supplier_code_keywords_list|join:',' }}"
+                                data-invoice-keywords="{{ template.get_invoice_number_keywords_list|join:',' }}"
+                                data-product-code-keywords="{{ template.get_product_code_keywords_list|join:',' }}"
+                                data-quantity-keywords="{{ template.get_quantity_keywords_list|join:',' }}"
+                                data-num-columns="{{ template.num_columns }}">
+                                {{ template.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
                     <!-- Camera container với khung căn chỉnh -->
                     <div id="camera-container" class="position-relative" style="display: none;">
                         <video id="video" class="w-100" playsinline autoplay></video>
@@ -394,6 +412,7 @@
     let cameraSelect = document.getElementById('cameraSelect');
     let cameraContainer = document.getElementById('camera-container');
     let statusDiv = document.getElementById('status');
+    let templateSelect = document.getElementById('templateSelect');
     let stream = null;
     let captureTimeout = null;
     let isAligned = false;
@@ -404,6 +423,16 @@
     let previousFrame = null;
     let motionThreshold = 30;
     let alignmentStartTime = null;
+
+    // Biến lưu trữ thông tin mẫu hóa đơn
+    let invoiceTemplateData = {
+        templateId: null,
+        supplierKeywords: [],
+        invoiceKeywords: [],
+        productCodeKeywords: [],
+        quantityKeywords: [],
+        numColumns: 0
+    };
 
     // Hiển thị thông báo trạng thái
     function showStatus(message, type = 'info') {
@@ -876,6 +905,13 @@
         isCapturing = true;
 
         try {
+            // Kiểm tra xem đã chọn mẫu hóa đơn chưa
+            if (!invoiceTemplateData.templateId) {
+                showStatus('Vui lòng chọn mẫu hóa đơn trước khi chụp', 'warning');
+                isCapturing = false;
+                return;
+            }
+
             // Tạo canvas tạm thời để xử lý ảnh
             const tempCanvas = document.createElement('canvas');
             const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
@@ -900,6 +936,9 @@
             canvas.toBlob(function (originalBlob) {
                 const formData = new FormData();
                 formData.append('image', originalBlob, 'captured_image.jpg');
+                
+                // Thêm ID mẫu hóa đơn đã chọn
+                formData.append('template_id', invoiceTemplateData.templateId);
                 
                 // Thêm ảnh debug với suffix @after_alignimage.png
                 canvas.toBlob(function (debugBlob) {
@@ -927,7 +966,50 @@
                         if (data.success) {
                             console.log('Raw API Response:', data);
                             console.log('Extracted Data:', data.extracted_data);
-                            updateExtractedData(data.extracted_data);
+                            
+                            // Kiểm tra lỗi cột không khớp
+                            if (data.extracted_data && data.extracted_data.error === 'column_mismatch') {
+                                // Tạm dừng quy trình camera để hiển thị thông báo lỗi
+                                if (captureTimeout) {
+                                    cancelAnimationFrame(captureTimeout);
+                                    captureTimeout = null;
+                                }
+                                
+                                if (countdownInterval) {
+                                    clearInterval(countdownInterval);
+                                    countdownInterval = null;
+                                }
+                                
+                                // Dừng camera hiện tại
+                                if (stream) {
+                                    stream.getTracks().forEach(track => track.stop());
+                                    stream = null;
+                                }
+                                
+                                // Hiển thị thông báo cho người dùng trong 3 giây
+                                showStatus(data.extracted_data.message, 'warning');
+                                
+                                // Cập nhật trạng thái
+                                const statusBadge = document.getElementById('invoice-status');
+                                statusBadge.textContent = 'Lỗi nhận dạng';
+                                statusBadge.className = 'badge bg-danger';
+                                
+                                // Tự động ẩn thông báo sau 3 giây và khởi động lại camera
+                                setTimeout(() => {
+                                    // Ẩn thông báo
+                                    document.getElementById('status').style.display = 'none';
+                                    // Cập nhật trạng thái
+                                    statusBadge.textContent = 'Chờ quét';
+                                    statusBadge.className = 'badge bg-primary';
+                                    // Khởi động lại camera sau khi hiển thị thông báo
+                                    startCamera();
+                                }, 3000);
+                            } else {
+                                // Xử lý dữ liệu bình thường
+                                updateExtractedData(data.extracted_data);
+                                // Khởi động lại camera
+                                startCamera();
+                            }
                         } else {
                             // cập nhật trạng thái
                             const statusBadge = document.getElementById('invoice-status');
@@ -944,8 +1026,7 @@
                     })
                     .finally(() => {
                         isCapturing = false;
-                        // Thay vì dừng camera, khởi động lại camera
-                        startCamera();
+                        // Không cần khởi động lại camera ở đây nữa, đã xử lý ở từng điều kiện
                     });
                 }, 'image/png', 1.0); // Lưu ảnh debug với chất lượng cao nhất
             }, 'image/jpeg', 0.95);
@@ -984,6 +1065,85 @@
     // Theo dõi thay đổi thiết bị
     navigator.mediaDevices.addEventListener('devicechange', async () => {
         await getCameraDevices();
+    });
+
+    // Hàm xử lý khi chọn mẫu hóa đơn
+    function handleTemplateSelection() {
+        const selectedOption = templateSelect.options[templateSelect.selectedIndex];
+        if (!selectedOption.value) {
+            // Reset dữ liệu nếu không chọn mẫu nào
+            invoiceTemplateData = {
+                templateId: null,
+                supplierKeywords: [],
+                invoiceKeywords: [],
+                productCodeKeywords: [],
+                quantityKeywords: [],
+                numColumns: 0
+            };
+            return;
+        }
+
+        // Lưu ID mẫu hóa đơn
+        invoiceTemplateData.templateId = selectedOption.value;
+        
+        // Lưu các từ khóa từ data attributes
+        if (selectedOption.dataset.supplierKeywords) {
+            invoiceTemplateData.supplierKeywords = selectedOption.dataset.supplierKeywords.split(',').filter(kw => kw.trim());
+        }
+        
+        if (selectedOption.dataset.invoiceKeywords) {
+            invoiceTemplateData.invoiceKeywords = selectedOption.dataset.invoiceKeywords.split(',').filter(kw => kw.trim());
+        }
+        
+        if (selectedOption.dataset.productCodeKeywords) {
+            invoiceTemplateData.productCodeKeywords = selectedOption.dataset.productCodeKeywords.split(',').filter(kw => kw.trim());
+        }
+        
+        if (selectedOption.dataset.quantityKeywords) {
+            invoiceTemplateData.quantityKeywords = selectedOption.dataset.quantityKeywords.split(',').filter(kw => kw.trim());
+        }
+        
+        // Lưu số cột
+        invoiceTemplateData.numColumns = parseInt(selectedOption.dataset.numColumns || 0);
+        
+        console.log('Đã chọn mẫu hóa đơn:', invoiceTemplateData);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Lấy danh sách camera
+        navigator.mediaDevices.enumerateDevices()
+            .then(devices => {
+                const cameras = devices.filter(device => device.kind === 'videoinput');
+                cameraSelect.innerHTML = '';
+                if (cameras.length === 0) {
+                    cameraSelect.innerHTML = '<option value="">Không tìm thấy camera</option>';
+                } else {
+                    cameras.forEach(camera => {
+                        const option = document.createElement('option');
+                        option.value = camera.deviceId;
+                        option.text = camera.label || `Camera ${cameraSelect.length + 1}`;
+                        cameraSelect.appendChild(option);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Lỗi khi liệt kê camera:', error);
+                cameraSelect.innerHTML = '<option value="">Lỗi khi tải camera</option>';
+            });
+
+        // Xử lý sự kiện khi chọn mẫu hóa đơn
+        templateSelect.addEventListener('change', handleTemplateSelection);
+
+        // Xử lý sự kiện khi nhấn nút mở camera
+        startButton.addEventListener('click', function () {
+            // Kiểm tra xem đã chọn mẫu hóa đơn chưa
+            if (!invoiceTemplateData.templateId) {
+                showStatus('Vui lòng chọn mẫu hóa đơn trước khi mở camera', 'warning');
+                return;
+            }
+            
+            startCamera();
+        });
     });
 </script>
 

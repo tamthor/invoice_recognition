@@ -28,8 +28,9 @@ for directory in [DOC_DIR, CROPTABLE_DIR]:
 api_path = None
 client = None
 
-# Biến toàn cục để lưu đường dẫn ảnh
+# Biến toàn cục để lưu đường dẫn ảnh và template_id
 detect_img_path = None
+current_template_id = None
 
 def get_api_path():
     '''Get API path location'''
@@ -41,11 +42,15 @@ def config_google_vision(api_path):
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = api_path
     return vision.ImageAnnotatorClient()
 
-def set_detect_img_path(path):
-    '''Set đường dẫn ảnh cần xử lý'''
+def set_detect_img_path(path, template_id=None):
+    '''Set đường dẫn ảnh cần xử lý và template_id (nếu có)'''
     global detect_img_path
+    global current_template_id
     detect_img_path = path
+    current_template_id = template_id
     print(f"Đã set đường dẫn ảnh: {detect_img_path}")
+    if current_template_id:
+        print(f"Đã set mẫu hóa đơn ID: {current_template_id}")
 
 def read_and_preprocess_image(image_path):
     '''Reads and converts images to grayscale'''
@@ -193,7 +198,7 @@ def save_cropped_columns(cropped_table, filtered_positions, output_dir=None):
         cv2.imwrite(output_path, column)
         print(f"Đã lưu cột {i+1} tại: {output_path}")
 
-def detect_text():
+def detect_text(supplier_keywords=None, invoice_keywords=None, product_code_keywords=None, quantity_keywords=None, num_columns=0):
     '''Thực hiện nhận dạng văn bản tệp đã chọn và hiển thị kết quả'''
     global client
     global detect_img_path
@@ -207,6 +212,28 @@ def detect_text():
     ma_ncc = None
     so_don_hang = None
     data_matrix = []
+    
+    # In thông tin mẫu hóa đơn nếu có
+    if supplier_keywords:
+        print(f"Từ khóa nhận dạng mã nhà cung cấp: {supplier_keywords}")
+    if invoice_keywords:
+        print(f"Từ khóa nhận dạng số hóa đơn: {invoice_keywords}")
+    if product_code_keywords:
+        print(f"Từ khóa nhận dạng cột mã hàng: {product_code_keywords}")
+    if quantity_keywords:
+        print(f"Từ khóa nhận dạng cột số lượng: {quantity_keywords}")
+    if num_columns:
+        print(f"Số cột trong bảng: {num_columns}")
+        
+    # Mặc định từ khóa nếu không được cung cấp
+    if not supplier_keywords:
+        supplier_keywords = ['ma', 'nha', 'cung', 'cap']
+    if not invoice_keywords:
+        invoice_keywords = ['so', 'don dat hang']
+    if not product_code_keywords:
+        product_code_keywords = ['ma', 'hang']
+    if not quantity_keywords:
+        quantity_keywords = ['so', 'luong']
     
     # Kiểm tra và khởi tạo client nếu cần
     if client is None:
@@ -259,7 +286,17 @@ def detect_text():
         
         # Tìm và lưu các cột
         filtered_positions = detect_and_filter_columns(cropped_table)
-        print(f"Đã phát hiện {len(filtered_positions)} vị trí cột")
+        
+        # Nếu có số cột được chỉ định từ mẫu hóa đơn, kiểm tra và điều chỉnh
+        if num_columns > 0 and len(filtered_positions) != num_columns + 1:
+            print(f"Số cột phát hiện ({len(filtered_positions) - 1}) khác với số cột trong mẫu ({num_columns}).")
+            # Thay vì điều chỉnh, trả về thông báo lỗi
+            return {
+                'error': 'column_mismatch',
+                'message': f"Số cột phát hiện ({len(filtered_positions) - 1}) khác với số cột trong mẫu ({num_columns}). Vui lòng chụp lại hóa đơn."
+            }
+        
+        print(f"Đã phát hiện {len(filtered_positions)-1} cột")
         save_cropped_columns(cropped_table, filtered_positions)
         print("Đã lưu các cột đã cắt")
 
@@ -320,14 +357,26 @@ def detect_text():
         for elem in text_elements:
             text = elem['text'].strip()
             text_lower = unidecode(text.lower())
-            if "ma" in text_lower or "hang" in text_lower or "so" in text_lower or "luong" in text_lower:
+            
+            # Sử dụng hàm kiểm tra linh hoạt để tìm từ khóa
+            has_product_keyword = check_keywords_flexible(text_lower, product_code_keywords)
+            has_quantity_keyword = check_keywords_flexible(text_lower, quantity_keywords)
+            
+            # In thông tin debug cho các từ khóa tìm thấy
+            if has_product_keyword or has_quantity_keyword:
+                print(f"Tìm thấy từ khóa trong text: '{text}', mã hàng: {has_product_keyword}, số lượng: {has_quantity_keyword}")
+                
+            if has_product_keyword or has_quantity_keyword:
                 if header_y is None:
                     header_y = elem['center_y']
                 if abs(elem['center_y'] - header_y) < 10:  # Cùng dòng header
                     header_texts.append({
                         'text': text,
                         'x': elem['center_x'],
-                        'normalized': text_lower
+                        'y': elem['center_y'],
+                        'normalized': text_lower,
+                        'is_product': has_product_keyword,
+                        'is_quantity': has_quantity_keyword
                     })
 
         print(f"Tìm thấy {len(header_texts)} text trong header")
@@ -337,17 +386,59 @@ def detect_text():
             header_texts.sort(key=lambda x: x['x'])  # Sắp xếp theo tọa độ x
             print("\n=== HEADER TEXTS ===")
             for h in header_texts:
-                print(f"{h['text']} at x={h['x']}")
+                product_flag = '(Mã hàng)' if h['is_product'] else ''
+                quantity_flag = '(Số lượng)' if h['is_quantity'] else ''
+                print(f"{h['text']} at x={h['x']} {product_flag} {quantity_flag}")
+            
+            # Tìm vị trí chính xác của cột mã hàng và số lượng
+            product_code_headers = [h for h in header_texts if h['is_product']]
+            quantity_headers = [h for h in header_texts if h['is_quantity']]
+            
+            # Tìm cột mã hàng (thường là cột thứ 2)
+            if product_code_headers:
+                # Sắp xếp các header mã hàng theo x
+                product_code_headers.sort(key=lambda x: x['x'])
                 
-            # Tìm cột Mã hàng và Số lượng
-            for i in range(len(header_texts) - 1):
-                combined = header_texts[i]['normalized'] + " " + header_texts[i + 1]['normalized']
-                if "ma" in combined and "hang" in combined:
-                    ma_hang_pos = (header_texts[i]['x'] + header_texts[i + 1]['x']) / 2
-                    print(f"✓ Tìm thấy cột 'Mã hàng' tại x = {ma_hang_pos}")
-                elif "so" in combined and "luong" in combined:
-                    so_luong_pos = (header_texts[i]['x'] + header_texts[i + 1]['x']) / 2
-                    print(f"✓ Tìm thấy cột 'Số lượng' tại x = {so_luong_pos}")
+                # Lấy vị trí cột mã hàng (thường là header thứ 2 hoặc 3)
+                if len(product_code_headers) >= 2:
+                    # Thường là 2 từ "Mã" và "hàng" nằm cạnh nhau
+                    for i in range(len(product_code_headers) - 1):
+                        if abs(product_code_headers[i]['x'] - product_code_headers[i+1]['x']) < 50:
+                            # Lấy giá trị trung bình của 2 từ gần nhau
+                            ma_hang_pos = (product_code_headers[i]['x'] + product_code_headers[i+1]['x']) / 2
+                            print(f"✓ Cột 'Mã hàng' xác định từ 2 từ gần nhau tại x = {ma_hang_pos}")
+                            break
+                    else:
+                        # Nếu không tìm thấy 2 từ gần nhau, lấy header đầu tiên
+                        ma_hang_pos = product_code_headers[0]['x']
+                        print(f"✓ Cột 'Mã hàng' xác định từ header đầu tiên tại x = {ma_hang_pos}")
+                else:
+                    # Chỉ có 1 header
+                    ma_hang_pos = product_code_headers[0]['x']
+                    print(f"✓ Cột 'Mã hàng' xác định từ header duy nhất tại x = {ma_hang_pos}")
+            
+            # Tìm cột số lượng (thường là một trong các cột cuối)
+            if quantity_headers:
+                # Sắp xếp các header số lượng theo x
+                quantity_headers.sort(key=lambda x: x['x'])
+                
+                # Lấy vị trí cột số lượng (thường là header cuối cùng hoặc gần cuối)
+                if len(quantity_headers) >= 2:
+                    # Thường là 2 từ "Số" và "lượng" nằm cạnh nhau
+                    for i in range(len(quantity_headers) - 1):
+                        if abs(quantity_headers[i]['x'] - quantity_headers[i+1]['x']) < 50:
+                            # Lấy giá trị trung bình của 2 từ gần nhau
+                            so_luong_pos = (quantity_headers[i]['x'] + quantity_headers[i+1]['x']) / 2
+                            print(f"✓ Cột 'Số lượng' xác định từ 2 từ gần nhau tại x = {so_luong_pos}")
+                            break
+                    else:
+                        # Nếu không tìm thấy 2 từ gần nhau, lấy header cuối cùng
+                        so_luong_pos = quantity_headers[-1]['x']
+                        print(f"✓ Cột 'Số lượng' xác định từ header cuối cùng tại x = {so_luong_pos}")
+                else:
+                    # Chỉ có 1 header
+                    so_luong_pos = quantity_headers[0]['x']
+                    print(f"✓ Cột 'Số lượng' xác định từ header duy nhất tại x = {so_luong_pos}")
         
         if not ma_hang_pos or not so_luong_pos:
             print("⚠ Không tìm thấy cột Mã hàng hoặc Số lượng")
@@ -359,20 +450,44 @@ def detect_text():
         quantity_lcol = None
         quantity_rcol = None
         
+        # Tìm cột chứa vị trí mã hàng trong filtered_positions
+        best_product_col_idx = 0
+        best_product_col_dist = float('inf')
         for i in range(1, len(filtered_positions)):
-            if filtered_positions[i-1] < ma_hang_pos < filtered_positions[i]:
+            # Tìm cột gần nhất với ma_hang_pos
+            col_center = (filtered_positions[i-1] + filtered_positions[i]) / 2
+            dist = abs(col_center - ma_hang_pos)
+            if dist < best_product_col_dist:
+                best_product_col_dist = dist
+                best_product_col_idx = i
                 product_code_lcol = filtered_positions[i-1]
                 product_code_rcol = filtered_positions[i]
-                print(f"Tìm thấy cột Mã hàng: {product_code_lcol} - {product_code_rcol}")
-            if filtered_positions[i-1] < so_luong_pos < filtered_positions[i]:
+        
+        print(f"Tìm thấy cột Mã hàng nằm giữa x={product_code_lcol} và x={product_code_rcol}")
+        
+        # Tìm cột chứa vị trí số lượng trong filtered_positions
+        best_quantity_col_idx = 0
+        best_quantity_col_dist = float('inf')
+        for i in range(1, len(filtered_positions)):
+            # Tìm cột gần nhất với so_luong_pos
+            col_center = (filtered_positions[i-1] + filtered_positions[i]) / 2
+            dist = abs(col_center - so_luong_pos)
+            if dist < best_quantity_col_dist:
+                best_quantity_col_dist = dist
+                best_quantity_col_idx = i
                 quantity_lcol = filtered_positions[i-1]
                 quantity_rcol = filtered_positions[i]
-                print(f"Tìm thấy cột Số lượng: {quantity_lcol} - {quantity_rcol}")
         
-        # Bước 3: Tạo ma trận dữ liệu
-        current_row = []
-        current_y = None
-        tolerance = 10
+        print(f"Tìm thấy cột Số lượng nằm giữa x={quantity_lcol} và x={quantity_rcol}")
+        
+        # Kiểm tra xem đã tìm thấy cả hai cột chưa
+        if not all([product_code_lcol, product_code_rcol, quantity_lcol, quantity_rcol]):
+            print("⚠ Không thể xác định chính xác vị trí của cột Mã hàng hoặc Số lượng")
+            return None
+        
+        # Bước 3: Thu thập tất cả text với tọa độ
+        # Tạo cấu trúc để lưu tất cả dữ liệu với tọa độ đầy đủ
+        all_data_elements = []
         
         # Tìm vị trí cột STT
         stt_pos = None
@@ -384,10 +499,11 @@ def detect_text():
         
         # Lọc và sắp xếp các text không phải header
         data_elements = [elem for elem in text_elements 
-                        if abs(elem['center_y'] - header_y) > tolerance]
+                        if abs(elem['center_y'] - header_y) > 10]  # Tolerance = 10
         data_elements.sort(key=lambda x: (x['center_y'], x['center_x']))
         print(f"Số text elements dữ liệu: {len(data_elements)}")
         
+        # Thu thập tất cả dữ liệu có liên quan với tọa độ đầy đủ
         for elem in data_elements:
             y = elem['center_y']
             x = elem['center_x']
@@ -397,39 +513,124 @@ def detect_text():
             if stt_pos and abs(x - stt_pos) < stt_width:
                 continue
                 
-            # Tạo hàng mới nếu cần
-            if current_y is None or abs(y - current_y) > tolerance:
-                if current_row:
-                    data_matrix.append(current_row)
-                current_row = [None, None]
-                current_y = y
+            elem_type = None
             
-            # Nếu đủ 6 cột, phân loại dựa vào x của cột
-            if len(filtered_positions) == 7 and all(var is not None for var in [product_code_lcol, product_code_rcol, quantity_lcol, quantity_rcol]):
-                if product_code_lcol < x < product_code_rcol:
-                    current_row[0] = text
-                elif quantity_lcol < x < quantity_rcol:
-                    current_row[1] = text
-            else:  
-                # Phân loại vào cột tương ứng dựa vào padding (chỉ xét Mã hàng và Số lượng)
-                if ma_hang_pos - stt_width + 10 <= x <= ma_hang_pos + stt_width + 10:
-                    current_row[0] = text
-                elif so_luong_pos - stt_width + 10 <= x <= so_luong_pos + stt_width + 10:
-                    current_row[1] = text
+            # Phân loại dữ liệu dựa vào tọa độ x
+            if product_code_lcol <= x <= product_code_rcol:
+                elem_type = "product_code"
+                print(f"Text trong cột mã hàng: '{text}' tại x={x}, y={y}")
+            elif quantity_lcol <= x <= quantity_rcol:
+                elem_type = "quantity"
+                print(f"Text trong cột số lượng: '{text}' tại x={x}, y={y}")
+            
+            # Thêm vào danh sách dữ liệu với loại và tọa độ
+            if elem_type:
+                all_data_elements.append({
+                    'text': text,
+                    'type': elem_type,
+                    'x': x,
+                    'y': y,
+                    'vertices': elem['vertices']
+                })
         
-        # Thêm hàng cuối
+        print(f"Tổng số phần tử dữ liệu đã phân loại: {len(all_data_elements)}")
+        
+        # Bước 4: Xử lý dữ liệu thông minh
+        # Sắp xếp theo y để xác định các dòng
+        all_data_elements.sort(key=lambda x: (x['y'], x['x']))
+        
+        # Gom nhóm các phần tử theo dòng
+        rows = []
+        current_row = []
+        current_y = None
+        tolerance = 10  # Dung sai cho cùng dòng
+        
+        for elem in all_data_elements:
+            if current_y is None:
+                current_y = elem['y']
+                current_row.append(elem)
+            elif abs(elem['y'] - current_y) <= tolerance:
+                # Cùng dòng
+                current_row.append(elem)
+            else:
+                # Dòng mới
+                if current_row:
+                    rows.append(current_row)
+                current_row = [elem]
+                current_y = elem['y']
+        
+        # Thêm dòng cuối
         if current_row:
-            data_matrix.append(current_row)
+            rows.append(current_row)
         
-        # In ma trận dữ liệu
-        print("\n=== MA TRẬN DỮ LIỆU ===")
-        print("Mã hàng\t\tSố lượng")
-        print("-" * 40)
-        for row in data_matrix:
-            if row[0] or row[1]:  # Chỉ in các hàng có ít nhất một giá trị
-                ma_hang = row[0] if row[0] else "N/A"
-                so_luong = row[1] if row[1] else "N/A"
-                print(f"{ma_hang}\t\t{so_luong}")
+        print(f"Phân tích được {len(rows)} dòng dữ liệu")
+        
+        # Bước 5: Xử lý từng dòng để trích xuất mã hàng và số lượng
+        data_matrix = []
+        
+        for row_idx, row_data in enumerate(rows):
+            product_code_parts = []
+            quantity = None
+            
+            # Lấy tất cả phần tử mã hàng trong dòng
+            for elem in row_data:
+                if elem['type'] == 'product_code':
+                    product_code_parts.append(elem)
+                elif elem['type'] == 'quantity':
+                    # Đối với số lượng, lấy giá trị cuối cùng
+                    quantity = elem['text']
+            
+            # Nếu có các phần mã hàng, xử lý ghép
+            if product_code_parts:
+                # Sắp xếp các phần mã hàng theo tọa độ x
+                product_code_parts.sort(key=lambda x: x['x'])
+                
+                # Ghép mã hàng
+                product_code = ''
+                for part in product_code_parts:
+                    product_code += part['text'].replace(" ", "")
+                
+                # Thêm vào ma trận kết quả
+                data_matrix.append([product_code, quantity])
+                print(f"Dòng {row_idx+1}: Mã hàng = '{product_code}', Số lượng = '{quantity}'")
+        
+        # Bước 6: Xử lý trường hợp mã hàng bị tách giữa các dòng
+        # Xử lý mã hàng bị tách (ví dụ: "GD" trên dòng 1, "03" trên dòng 2)
+        merged_matrix = []
+        skip_next = False
+        
+        for i in range(len(data_matrix)):
+            if skip_next:
+                skip_next = False
+                continue
+                
+            current_row = data_matrix[i]
+            product_code, quantity = current_row
+            
+            # Nếu chưa phải dòng cuối và có hàng tiếp theo
+            if i < len(data_matrix) - 1:
+                next_row = data_matrix[i + 1]
+                next_product_code, next_quantity = next_row
+                
+                # Kiểm tra nếu mã hiện tại là chữ và mã tiếp theo là số
+                if (product_code and next_product_code and 
+                    product_code.strip().isalpha() and next_product_code.strip().isdigit()):
+                    # Đây là trường hợp mã hàng bị tách (ví dụ: "GD" và "03")
+                    merged_code = product_code.strip() + next_product_code.strip()
+                    print(f"Ghép mã hàng bị tách giữa các dòng: '{product_code}' + '{next_product_code}' -> '{merged_code}'")
+                    
+                    # Ưu tiên sử dụng số lượng từ dòng thứ 2
+                    merged_quantity = next_quantity if next_quantity else quantity
+                    
+                    # Thêm mã đã ghép vào kết quả
+                    merged_matrix.append([merged_code, merged_quantity])
+                    skip_next = True  # Bỏ qua dòng tiếp theo vì đã xử lý
+                else:
+                    # Không phải trường hợp ghép, giữ nguyên
+                    merged_matrix.append(current_row)
+            else:
+                # Dòng cuối không cần xử lý ghép
+                merged_matrix.append(current_row)
         
         # Tạo danh sách các text elements phía trên bảng
         header_elements = []
@@ -447,7 +648,9 @@ def detect_text():
         # Tìm mã nhà cung cấp
         for i, elem in enumerate(header_elements):
             text = elem['text'].strip().lower()
-            if any(keyword in text for keyword in ['ma', 'nha', 'cung', 'cap']):
+            
+            # Kiểm tra từ khóa nhà cung cấp với phương pháp linh hoạt
+            if check_keywords_flexible(text, supplier_keywords):
                 # Tìm số trong cùng dòng (có center_y gần nhau)
                 current_y = elem['center_y']
                 for next_elem in header_elements[i:]:
@@ -463,8 +666,10 @@ def detect_text():
         
         # Tìm số đơn đặt hàng
         for i, elem in enumerate(header_elements):
-            text = unidecode(elem['text'].strip().lower())
-            if text == "so" or "don dat hang" in text:  # Tìm text chứa "số" hoặc "đơn đặt hàng"
+            text = elem['text'].strip().lower()
+            
+            # Kiểm tra từ khóa đơn hàng với phương pháp linh hoạt
+            if check_keywords_flexible(text, invoice_keywords):
                 # Tìm số trong cùng dòng
                 current_y = elem['center_y']
                 # Lấy tất cả text elements trên cùng một dòng
@@ -496,8 +701,11 @@ def detect_text():
         result = {
             'ma_ncc': ma_ncc,
             'so_don_hang': so_don_hang,
-            'data_matrix': data_matrix
+            'data_matrix': merged_matrix  # Sử dụng ma trận đã được xử lý ghép
         }
+        
+        # Xử lý hậu kỳ trước khi trả về kết quả
+        result = post_process_data(result)
         
         print("Kết quả trích xuất:", result)
         return result
@@ -507,9 +715,106 @@ def detect_text():
         traceback.print_exc()
         return None
 
+def check_keywords_flexible(text, keywords_list):
+    """
+    Kiểm tra linh hoạt nếu text có chứa bất kỳ từ khóa nào từ danh sách
+    Cho phép khớp một phần và nhiều cách viết khác nhau
+    """
+    # Chuẩn hóa text thành chữ thường và không dấu
+    text = unidecode(text.lower())
+    
+    # Loại bỏ khoảng trắng để tìm kiếm từ liền nhau
+    text_no_space = text.replace(" ", "")
+    
+    # 1. Kiểm tra từng từ khóa đơn lẻ
+    for keyword in keywords_list:
+        keyword_lower = unidecode(keyword.lower())
+        
+        # Kiểm tra từ khóa trong text ban đầu
+        if keyword_lower in text:
+            return True
+        
+        # Kiểm tra từ khóa trong text đã loại bỏ khoảng trắng
+        if keyword_lower.replace(" ", "") in text_no_space:
+            return True
+    
+    # 2. Kiểm tra kết hợp các từ khóa (cho trường hợp 2 từ liên tiếp)
+    if len(keywords_list) >= 2:
+        # Kết hợp các từ khóa trong danh sách
+        combined_keywords = []
+        for i in range(len(keywords_list) - 1):
+            for j in range(i + 1, len(keywords_list)):
+                combined = unidecode(keywords_list[i].lower()) + unidecode(keywords_list[j].lower())
+                combined_no_space = combined.replace(" ", "")
+                combined_keywords.append(combined_no_space)
+        
+        # Kiểm tra từng từ khóa kết hợp
+        for combined in combined_keywords:
+            if combined in text_no_space:
+                return True
+    
+    return False
+
+def post_process_data(result):
+    """
+    Xử lý hậu kỳ dữ liệu trước khi trả về
+    - Ghép các phần của mã hàng (loại bỏ khoảng trắng)
+    - Xử lý dữ liệu số lượng (chuyển O/Q thành 0)
+    """
+    if not result or 'data_matrix' not in result:
+        return result
+    
+    data_matrix = result['data_matrix']
+    processed_matrix = []
+    
+    # Xử lý từng dòng dữ liệu
+    for row in data_matrix:
+        if len(row) != 2:
+            continue
+            
+        product_code, quantity = row
+        
+        # Bỏ qua hàng không có dữ liệu
+        if not product_code and not quantity:
+            continue
+            
+        # Xử lý mã hàng: loại bỏ khoảng trắng
+        if product_code:
+            product_code = product_code.replace(" ", "")
+        
+        # Xử lý số lượng: chuyển O/Q thành 0
+        if quantity:
+            # Thay thế các ký tự O/Q/o/q bằng số 0
+            quantity = quantity.replace('O', '0').replace('o', '0').replace('Q', '0').replace('q', '0')
+            # Thay thế các ký tự S/s bằng số 5 (thường bị OCR nhầm)
+            quantity = quantity.replace('S', '5').replace('s', '5')
+            # Thay thế các ký tự I/l/| bằng số 1
+            quantity = quantity.replace('I', '1').replace('l', '1').replace('|', '1')
+            
+            # Loại bỏ các ký tự không phải số hoặc dấu thập phân
+            quantity = ''.join(c for c in quantity if c.isdigit() or c == '.')
+        
+        # Thêm dòng đã xử lý vào kết quả cuối cùng
+        if product_code or quantity:
+            processed_matrix.append([product_code, quantity])
+    
+    # Cập nhật ma trận dữ liệu
+    result['data_matrix'] = processed_matrix
+    
+    print("\n=== MA TRẬN DỮ LIỆU SAU XỬ LÝ ===")
+    print("Mã hàng\t\tSố lượng")
+    print("-" * 40)
+    for row in processed_matrix:
+        ma_hang = row[0] if row[0] else "N/A"
+        so_luong = row[1] if row[1] else "N/A"
+        print(f"{ma_hang}\t\t{so_luong}")
+    
+    return result
+
 def main():
     global api_path
     global client
+    global current_template_id
     
     # Kiểm tra các file và thư mục cần thiết
     if not os.path.exists(DOC_DIR):
@@ -525,8 +830,8 @@ def main():
     client = config_google_vision(api_path)
     
     try:
-        # Xử lý ảnh và căn chỉnh
-        process_image(detect_img_path)
+        # Xử lý ảnh và căn chỉnh với template_id (nếu có)
+        process_image(detect_img_path, template_id=current_template_id)
         print("Xử lý ảnh thành công!")
         
         # Nhận dạng hóa đơn

@@ -2,6 +2,14 @@ import os
 import cv2
 import numpy as np
 from django.conf import settings
+import django
+import sys
+
+# Đảm bảo Django được khởi tạo
+if 'DJANGO_SETTINGS_MODULE' not in os.environ:
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'invoice_recognition.settings')
+    django.setup()
 
 def preprocess_image(image):
     '''Tiền xử lý ảnh để cải thiện chất lượng'''
@@ -39,13 +47,36 @@ def remove_background(image):
         return cropped
     return image
 
-def alignImages(im1):
+def alignImages(im1, template_id=None):
     '''Căn chỉnh ảnh với ảnh mẫu sử dụng ORB'''
     MAX_FEATURES = 5000  # Số lượng đặc trưng
     GOOD_MATCH_PERCENT = 0.15  # Tỉ lệ matches
     
-    # Load ảnh mẫu
-    template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'doc', 'anh_mau.jpg')
+    # Lấy ảnh mẫu từ InvoiceTemplate model
+    if template_id:
+        try:
+            # Import model InvoiceTemplate
+            from invoice_ocr.models import InvoiceTemplate
+            
+            # Lấy template từ id
+            template = InvoiceTemplate.objects.get(id=template_id)
+            if template.template_image:
+                template_path = template.template_image.path
+                print(f"Sử dụng ảnh mẫu từ mẫu hóa đơn ID={template_id}: {template_path}")
+            else:
+                raise ValueError(f"Mẫu hóa đơn ID={template_id} không có ảnh mẫu.")
+        except Exception as e:
+            print(f"Lỗi khi lấy ảnh mẫu từ model: {str(e)}")
+            # Sử dụng ảnh mẫu mặc định nếu có lỗi
+            template_path = os.path.join(settings.MEDIA_ROOT, 'invoice_templates', 'default_template.jpg')
+            if not os.path.exists(template_path):
+                # Nếu không có ảnh mẫu mặc định, sử dụng ảnh cũ
+                template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'doc', 'anh_mau.jpg')
+            print(f"Sử dụng ảnh mẫu mặc định: {template_path}")
+    else:
+        # Sử dụng ảnh mẫu mặc định khi không chỉ định template_id
+        template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'doc', 'anh_mau.jpg')
+        print(f"Không có ID mẫu hóa đơn được chỉ định, sử dụng ảnh mẫu mặc định: {template_path}")
 
     im2 = cv2.imread(template_path, cv2.IMREAD_COLOR)
     if im2 is None:
@@ -93,15 +124,15 @@ def alignImages(im1):
     
     return im1Reg, height, width
 
-def process_image(img_path, output_path=None):
+def process_image(img_path, output_path=None, template_id=None):
     '''Xử lý ảnh chính'''
     # Đọc ảnh đầu vào
     image = cv2.imread(img_path)
     if image is None:
         raise ValueError(f"Không thể đọc ảnh từ đường dẫn: {img_path}")
 
-    # Căn chỉnh ảnh
-    aligned_image, _, _ = alignImages(image)
+    # Căn chỉnh ảnh với template_id (nếu có)
+    aligned_image, _, _ = alignImages(image, template_id)
     
     # Nếu không có output_path, sử dụng tên file mặc định
     if output_path is None:
@@ -118,15 +149,4 @@ def process_image(img_path, output_path=None):
     print(f"Đã lưu ảnh đã căn chỉnh tại: {output_path}")
     return output_path
 
-def main():
-    # Đường dẫn ảnh đầu vào
-    img_path = os.path.join(settings.MEDIA_ROOT, 'doc', 'anhcancat3.jpg')
-    
-    try:
-        process_image(img_path)
-        print("Xử lý ảnh thành công!")
-    except Exception as e:
-        print(f"Lỗi: {str(e)}")
 
-# if __name__ == "__main__":
-#     main()

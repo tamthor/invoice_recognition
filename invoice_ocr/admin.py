@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Supplier, Product, WarehouseReceipt, ReceiptDetail, Inventory, Category, UserAccount
+from .models import Supplier, Product, WarehouseReceipt, ReceiptDetail, Inventory, Category, UserAccount, InvoiceTemplate
 
 class UserAccountAdmin(UserAdmin):
     model = UserAccount
@@ -28,3 +28,4 @@ admin.site.register(UserAccount, UserAccountAdmin)
 admin.site.register(WarehouseReceipt)
 admin.site.register(ReceiptDetail)
 admin.site.register(Inventory)
+admin.site.register(InvoiceTemplate)

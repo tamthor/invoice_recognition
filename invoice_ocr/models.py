@@ -116,6 +116,7 @@ class WarehouseReceipt(models.Model):
     order_number = models.CharField(max_length=100, unique=True)
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE)
     receipt_date = models.DateField()
+    created_by = models.ForeignKey(UserAccount, on_delete=models.SET_NULL, null=True, related_name="created_receipts")
 
     def __str__(self):
         return f"Receipt {self.order_number}"
@@ -145,11 +146,62 @@ class Inventory(models.Model):
     def __str__(self):
         return f"{self.product.product_name}: {self.quantity_in_stock}"
 
+# Invoice Template model
+class InvoiceTemplate(models.Model):
+    name = models.CharField(max_length=200, unique=True, verbose_name="Tên mẫu hóa đơn")
+    template_image = models.ImageField(upload_to='invoice_templates/', verbose_name="Ảnh mẫu hóa đơn")
+    
+    # Từ khóa nhận dạng
+    supplier_code_keywords = models.TextField(
+        verbose_name="Từ khóa nhận dạng mã nhà cung cấp",
+        help_text="Các từ khóa cách nhau bằng dấu phẩy (,)"
+    )
+    invoice_number_keywords = models.TextField(
+        verbose_name="Từ khóa nhận dạng số hóa đơn/đơn hàng", 
+        help_text="Các từ khóa cách nhau bằng dấu phẩy (,)"
+    )
+    product_code_keywords = models.TextField(
+        verbose_name="Từ khóa nhận dạng cột mã hàng", 
+        help_text="Các từ khóa cách nhau bằng dấu phẩy (,)"
+    )
+    quantity_keywords = models.TextField(
+        verbose_name="Từ khóa nhận dạng cột số lượng", 
+        help_text="Các từ khóa cách nhau bằng dấu phẩy (,)"
+    )
+    
+    # Thông tin cấu trúc bảng
+    num_columns = models.PositiveIntegerField(
+        default=0, 
+        verbose_name="Số cột trong bảng"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.name
+    
+    def get_supplier_code_keywords_list(self):
+        """Trả về danh sách các từ khóa nhận dạng mã nhà cung cấp"""
+        return [kw.strip() for kw in self.supplier_code_keywords.split(',') if kw.strip()]
+    
+    def get_invoice_number_keywords_list(self):
+        """Trả về danh sách các từ khóa nhận dạng số hóa đơn"""
+        return [kw.strip() for kw in self.invoice_number_keywords.split(',') if kw.strip()]
+    
+    def get_product_code_keywords_list(self):
+        """Trả về danh sách các từ khóa nhận dạng cột mã hàng"""
+        return [kw.strip() for kw in self.product_code_keywords.split(',') if kw.strip()]
+    
+    def get_quantity_keywords_list(self):
+        """Trả về danh sách các từ khóa nhận dạng cột số lượng"""
+        return [kw.strip() for kw in self.quantity_keywords.split(',') if kw.strip()]
+
 # ------------------------------- #
 #         SUPPORT FUNCTION        #
 # ------------------------------- #
 
-def add_warehouse_receipt(supplier_id, order_number, receipt_date):
+def add_warehouse_receipt(supplier_id, order_number, receipt_date, created_by=None):
     try:
         supplier = Supplier.objects.filter(supplier_id=supplier_id).first()
         if not supplier:
@@ -161,7 +213,8 @@ def add_warehouse_receipt(supplier_id, order_number, receipt_date):
         WarehouseReceipt.objects.create(
             supplier=supplier,
             order_number=order_number,
-            receipt_date=receipt_date
+            receipt_date=receipt_date,
+            created_by=created_by
         )
         return "Thêm phiếu nhập kho thành công."
 
@@ -204,7 +257,7 @@ def update_inventory(product_id, quantity):
     except Exception as e:
         return f"Lỗi: {str(e)}"
 
-def process_invoice_data(supplier_id, order_number, receipt_date, product_data_list):
+def process_invoice_data(supplier_id, order_number, receipt_date, product_data_list, created_by=None):
     """
     Xử lý dữ liệu sau khi nhận dạng từ hóa đơn
     
@@ -213,6 +266,7 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
         order_number (str): Số hóa đơn
         receipt_date (date): Ngày hóa đơn
         product_data_list (list): Danh sách sản phẩm với cấu trúc [ma_hang, so_luong]
+        created_by (UserAccount, optional): Tài khoản người tạo phiếu nhập
     
     Returns:
         dict: Kết quả xử lý với các thông tin:
@@ -242,7 +296,8 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
         warehouse_receipt = WarehouseReceipt.objects.create(
             supplier=supplier,
             order_number=order_number,
-            receipt_date=receipt_date
+            receipt_date=receipt_date,
+            created_by=created_by
         )
         
         processed_products = []
@@ -259,6 +314,14 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
                 skipped_products.append({
                     'ma_hang': ma_hang,
                     'reason': 'Sản phẩm không tồn tại'
+                })
+                continue
+                
+            # Kiểm tra nhà cung cấp của sản phẩm có khớp không
+            if product.supplier.supplier_id != supplier_id:
+                skipped_products.append({
+                    'ma_hang': ma_hang,
+                    'reason': f'Sản phẩm không thuộc nhà cung cấp {supplier.supplier_name}'
                 })
                 continue
                 

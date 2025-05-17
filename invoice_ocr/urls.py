@@ -17,4 +17,11 @@ urlpatterns = [
     path('extract-data/', views.extract_data, name='extract_data'),
     path('search/', views.search, name='search'),
     path('report/', views.report, name='report'),
+    path('export-pdf/', views.export_pdf, name='export_pdf'),
+    
+    # Quản lý mẫu hóa đơn
+    path('invoice-templates/', views.invoice_templates, name='invoice_templates'),
+    path('invoice-templates/add/', views.invoice_add_template, name='invoice_add_template'),
+    path('invoice-templates/edit/<int:template_id>/', views.invoice_edit_template, name='invoice_edit_template'),
+    path('invoice-templates/delete/<int:template_id>/', views.invoice_delete_template, name='invoice_delete_template'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)   
