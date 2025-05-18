@@ -89,11 +89,11 @@
                                     <div class="col-md-4">
                                         <button type="submit" class="btn btn-primary w-100">Tìm kiếm</button>
                                     </div>
-                                    <div class="col-md-12">
+                                    <!-- <div class="col-md-12">
                                         <a href="{% url 'report' %}" class="btn btn-outline-primary">
                                             <i class="fas fa-chart-bar me-1"></i>Xem báo cáo thống kê
                                         </a>
-                                    </div>
+                                    </div> -->
                                 </div>
                             </form>
                         </div>
@@ -115,6 +115,9 @@
                                         <div class="col-md-6">
                                             <p class="mb-1"><strong>Mã nhà cung cấp:</strong> {{ receipt.supplier.supplier_id }}</p>
                                             <p class="mb-1"><strong>Tên nhà cung cấp:</strong> {{ receipt.supplier.supplier_name }}</p>
+                                            <button class="btn btn-success btn-sm mt-2" onclick="printInvoice('{{ receipt.id }}')">
+                                                <i class="fas fa-print"></i> In phiếu
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -234,9 +237,168 @@
         </div>
     </div>
 </div>
-
+<!-- Modal In Phiếu Nhập Kho -->
+<div class="modal fade" id="printModal" tabindex="-1" aria-labelledby="printModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="printModalLabel">PHIẾU NHẬP KHO</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+        </div>
+        <div class="modal-body" id="print-content">
+          <!-- Nội dung phiếu nhập kho sẽ được render ở đây bằng JS -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+          <button type="button" class="btn btn-primary" onclick="printDocument()">In</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Script định nghĩa hàm trước khi gọi -->
+  <script>
+  // Hàm hiển thị popup in phiếu nhập kho
+  function printInvoice(receiptId) {
+    const receiptData = receiptDataMap[receiptId];
+    if (!receiptData) return;
+  
+    let html = `
+    <div style="font-family: Arial; font-size: 13px; max-width: 800px; margin: auto;">
+      <div style="text-align: center;">
+        <h2 style="font-size: 16px; font-weight: bold; margin-bottom: 30px;">PHIẾU NHẬP KHO</h2>
+        <p>Ngày .... tháng .... năm ....</p>
+      </div>
+  
+      <div style="margin-bottom: 10px; line-height: 1.6;">
+        <div><strong>Mã nhà cung cấp:</strong> ${receiptData.supplier_id}</div>
+        <div><strong>Tên nhà cung cấp:</strong> ${receiptData.supplier_name}</div>
+        <div><strong>Số đơn đặt hàng:</strong> ${receiptData.order_number}</div>
+        <div><strong>Ngày nhập:</strong> ${receiptData.receipt_date}</div>
+      </div>
+  
+      <table style="width:100%; border-collapse: collapse; border: 0.5px solid #999; font-size: 13px;">
+        <thead>
+          <tr style="background-color: #f2f2f2;">
+            <th style="border: 0.5px solid #999; padding: 6px; width: 5%;">STT</th>
+            <th style="border: 0.5px solid #999; padding: 6px; width: 10%; text-align: center;">Mã hàng</th>
+            <th style="border: 0.5px solid #999; padding: 6px; width: 35%; text-align: center;">Tên hàng</th>
+            <th style="border: 0.5px solid #999; padding: 6px; width: 15%; text-align: center;">Đơn vị tính</th>
+            <th style="border: 0.5px solid #999; padding: 6px; width: 15%; text-align: center;">Số lượng</th>
+            <th style="border: 0.5px solid #999; padding: 6px; width: 20%; text-align: center;">Ghi chú</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${receiptData.details.map((item, idx) => `
+            <tr>
+              <td style="border: 0.5px solid #999; padding: 6px; text-align: center;">${idx + 1}</td>
+              <td style="border: 0.5px solid #999; padding: 6px;">${item.product_id}</td>
+              <td style="border: 0.5px solid #999; padding: 6px;">${item.product_name}</td>
+              <td style="border: 0.5px solid #999; padding: 6px; text-align: center;">${item.unit}</td>
+              <td style="border: 0.5px solid #999; padding: 6px; text-align: center;">${item.quantity}</td>
+              <td style="border: 0.5px solid #999; padding: 6px;"></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+  
+      <div style="margin-top: 40px; display: flex; justify-content: space-between; font-size: 13px;">
+        <div style="text-align: center;">
+          <p>Người nhận</p>
+          <div style="height: 60px;"></div>
+          <p>(Ký, ghi rõ họ tên)</p>
+        </div>
+        <div style="text-align: center;">
+          <p>Người giao</p>
+          <div style="height: 60px;"></div>
+          <p>(Ký, ghi rõ họ tên)</p>
+        </div>
+      </div>
+      
+    </div>
+  `;
+  
+    document.getElementById('print-content').innerHTML = html;
+    var printModal = new bootstrap.Modal(document.getElementById('printModal'));
+    printModal.show();
+  }
+  
+  
+  
+  // Hàm in nội dung popup
+  function printDocument() {
+    var printContents = document.getElementById('print-content').innerHTML;
+    
+    // Tạo iframe để in
+    var iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    
+    var iframeDoc = iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(`
+      <html>
+        <head>
+          <title>In phiếu nhập kho</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              margin: 0;
+              padding: 1cm;
+              font-size: 13px;
+            }
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 0.5cm;
+              }
+              /* Ẩn header và footer khi in */
+              header, footer, .header-timestamp, .footer-url, .page-number {
+                display: none !important;
+                visibility: hidden !important;
+              }
+            }
+          </style>
+        </head>
+        <body>${printContents}</body>
+      </html>
+    `);
+    iframeDoc.close();
+    
+    // Đợi iframe load xong
+    setTimeout(function() {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      
+      // Xóa iframe sau khi in
+      document.body.removeChild(iframe);
+    }, 500);
+  }
+  </script>
+  
+  <!-- Tạo dữ liệu hóa đơn dạng JSON từ Django Template -->
 <!-- Custom JS for form handling -->
 <script>
+    const receiptDataMap = {
+  {% for receipt in results %}
+    "{{ receipt.id }}": {
+      order_number: "{{ receipt.order_number|escapejs }}",
+      receipt_date: "{{ receipt.receipt_date|escapejs }}",
+      supplier_id: "{{ receipt.supplier.supplier_id|escapejs }}",
+      supplier_name: "{{ receipt.supplier.supplier_name|escapejs }}",
+      details: [
+        {% for detail in receipt.receiptdetail_set.all %}
+          {
+            product_id: "{{ detail.product.product_id|escapejs }}",
+            product_name: "{{ detail.product.product_name|escapejs }}",
+            unit: "{{ detail.product.unit|escapejs }}",
+            quantity: "{{ detail.quantity|escapejs }}"
+          }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      ]
+    }{% if not forloop.last %},{% endif %}
+  {% endfor %}
+};
 document.addEventListener('DOMContentLoaded', function() {
     // Get radio buttons and fields
     const searchTypeRadios = document.getElementsByName('search_type');
