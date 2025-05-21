@@ -28,7 +28,7 @@ A Django-based web application for automated invoice processing and recognition.
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/invoice_recognition.git
+git clone https://github.com/tamthor/invoice_recognition.git
 cd invoice_recognition
 ```
 
