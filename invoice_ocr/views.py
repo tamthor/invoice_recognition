@@ -290,30 +290,40 @@ def search(request):
     if search_type == 'product':
         product_id = request.GET.get('product_id', '')
         product_name = request.GET.get('product_name', '')
+        show_all = request.GET.get('all') == '1'
         
-        query = Q()
-        if product_id:
-            query |= Q(product_id__icontains=product_id)
-        if product_name:
-            query |= Q(product_name__icontains=product_name)
-            
-        if query:
-            results = Product.objects.filter(query).select_related('supplier', 'inventory')
+        if show_all:
+            results = Product.objects.all().select_related('supplier', 'inventory')
+        else:
+            query = Q()
+            if product_id:
+                query |= Q(product_id__icontains=product_id)
+            if product_name:
+                query |= Q(product_name__icontains=product_name)
+                
+            if query:
+                results = Product.objects.filter(query).select_related('supplier', 'inventory')
             
     elif search_type == 'supplier':
         supplier_id = request.GET.get('supplier_id', '')
         supplier_name = request.GET.get('supplier_name', '')
+        show_all = request.GET.get('all') == '1'
         
-        query = Q()
-        if supplier_id:
-            query |= Q(supplier_id__icontains=supplier_id)
-        if supplier_name:
-            query |= Q(supplier_name__icontains=supplier_name)
-            
-        if query:
-            results = Supplier.objects.filter(query).annotate(
+        if show_all:
+            results = Supplier.objects.all().annotate(
                 product_count=Count('product')
             )
+        else:
+            query = Q()
+            if supplier_id:
+                query |= Q(supplier_id__icontains=supplier_id)
+            if supplier_name:
+                query |= Q(supplier_name__icontains=supplier_name)
+                
+            if query:
+                results = Supplier.objects.filter(query).annotate(
+                    product_count=Count('product')
+                )
             
     elif search_type == 'receipt':
         # Tìm kiếm theo số hóa đơn
