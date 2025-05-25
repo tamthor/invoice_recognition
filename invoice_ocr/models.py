@@ -260,24 +260,18 @@ def update_inventory(product_id, quantity):
 def process_invoice_data(supplier_id, order_number, receipt_date, product_data_list, created_by=None):
     """
     Xử lý dữ liệu sau khi nhận dạng từ hóa đơn
-    
-    Args:
-        supplier_id (str): Mã nhà cung cấp
-        order_number (str): Số hóa đơn
-        receipt_date (date): Ngày hóa đơn
-        product_data_list (list): Danh sách sản phẩm với cấu trúc [ma_hang, so_luong]
-        created_by (UserAccount, optional): Tài khoản người tạo phiếu nhập
-    
-    Returns:
-        dict: Kết quả xử lý với các thông tin:
-            - success: True/False
-            - message: Thông báo kết quả
-            - details: Chi tiết các sản phẩm đã xử lý
     """
     try:
+        print(f"\n=== DEBUG PROCESS_INVOICE_DATA ===")
+        print(f"Supplier ID: {supplier_id}")
+        print(f"Order Number: {order_number}")
+        print(f"Receipt Date: {receipt_date}")
+        print(f"Product Data List: {product_data_list}")
+        
         # Kiểm tra nhà cung cấp có tồn tại không
         supplier = Supplier.objects.filter(supplier_id=supplier_id).first()
         if not supplier:
+            print("Supplier not found")
             return {
                 'success': False,
                 'message': 'Nhà cung cấp không tồn tại',
@@ -286,6 +280,7 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
             
         # Kiểm tra số hóa đơn đã tồn tại chưa
         if WarehouseReceipt.objects.filter(order_number=order_number).exists():
+            print("Order number already exists")
             return {
                 'success': False,
                 'message': 'Số hóa đơn đã tồn tại',
@@ -299,6 +294,7 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
             receipt_date=receipt_date,
             created_by=created_by
         )
+        print(f"Created warehouse receipt: {warehouse_receipt.receipt_id}")
         
         processed_products = []
         skipped_products = []
@@ -306,11 +302,21 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
         # Xử lý từng sản phẩm
         for product_data in product_data_list:
             ma_hang = product_data[0]
-            so_luong = int(product_data[1])
+            try:
+                so_luong = int(product_data[1])
+                print(f"\nProcessing product: {ma_hang}, quantity: {so_luong}")
+            except ValueError as e:
+                print(f"Error converting quantity for {ma_hang}: {e}")
+                skipped_products.append({
+                    'ma_hang': ma_hang,
+                    'reason': f'Lỗi chuyển đổi số lượng: {str(e)}'
+                })
+                continue
             
             # Kiểm tra sản phẩm có tồn tại không
             product = Product.objects.filter(product_id=ma_hang).first()
             if not product:
+                print(f"Product not found: {ma_hang}")
                 skipped_products.append({
                     'ma_hang': ma_hang,
                     'reason': 'Sản phẩm không tồn tại'
@@ -318,31 +324,45 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
                 continue
                 
             # Kiểm tra nhà cung cấp của sản phẩm có khớp không
-            if product.supplier.supplier_id != supplier_id:
+            if int(product.supplier.supplier_id) != int(supplier_id):
+                print(f"Product supplier mismatch: {ma_hang}")
                 skipped_products.append({
                     'ma_hang': ma_hang,
                     'reason': f'Sản phẩm không thuộc nhà cung cấp {supplier.supplier_name}'
                 })
                 continue
                 
-            # Cập nhật tồn kho
-            inventory, created = Inventory.objects.get_or_create(product=product)
-            inventory.quantity_in_stock += so_luong
-            inventory.save()
+            try:
+                # Cập nhật tồn kho
+                inventory, created = Inventory.objects.get_or_create(product=product)
+                inventory.quantity_in_stock += so_luong
+                inventory.save()
+                print(f"Updated inventory for {ma_hang}")
+                
+                # Thêm chi tiết phiếu nhập
+                ReceiptDetail.objects.create(
+                    receipt=warehouse_receipt,
+                    product=product,
+                    quantity=so_luong
+                )
+                print(f"Created receipt detail for {ma_hang}")
+                
+                processed_products.append({
+                    'ma_hang': ma_hang,
+                    'ten_hang': product.product_name,
+                    'so_luong': so_luong
+                })
+            except Exception as e:
+                print(f"Error processing product {ma_hang}: {str(e)}")
+                skipped_products.append({
+                    'ma_hang': ma_hang,
+                    'reason': f'Lỗi xử lý: {str(e)}'
+                })
             
-            # Thêm chi tiết phiếu nhập
-            ReceiptDetail.objects.create(
-                receipt=warehouse_receipt,
-                product=product,
-                quantity=so_luong
-            )
-            
-            processed_products.append({
-                'ma_hang': ma_hang,
-                'ten_hang': product.product_name,
-                'so_luong': so_luong
-            })
-            
+        print("\n=== PROCESSING RESULTS ===")
+        print(f"Processed products: {processed_products}")
+        print(f"Skipped products: {skipped_products}")
+        
         return {
             'success': True,
             'message': 'Xử lý hóa đơn thành công',
@@ -353,6 +373,7 @@ def process_invoice_data(supplier_id, order_number, receipt_date, product_data_l
         }
         
     except Exception as e:
+        print(f"Error in process_invoice_data: {str(e)}")
         return {
             'success': False,
             'message': f'Lỗi khi xử lý hóa đơn: {str(e)}',

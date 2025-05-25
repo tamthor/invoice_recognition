@@ -91,12 +91,12 @@ def detect_and_filter_columns(cropped_table, min_line_length=50, max_line_gap=10
     
     # Tăng độ dài tối thiểu của đường thẳng để loại bỏ nhiễu
     lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, 
-                           minLineLength=cropped_table.shape[0] * 0.30,  # Ít nhất 53% chiều cao bảng
+                           minLineLength=cropped_table.shape[0] * 0.25,  # Ít nhất 25% chiều cao bảng
                            maxLineGap=10)
 
     # Thu thập tất cả các đường thẳng dọc
     vertical_lines = []
-    threshold_angle_error = 20
+    threshold_angle_error = 25
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
@@ -653,14 +653,17 @@ def detect_text(supplier_keywords=None, invoice_keywords=None, product_code_keyw
             if check_keywords_flexible(text, supplier_keywords):
                 # Tìm số trong cùng dòng (có center_y gần nhau)
                 current_y = elem['center_y']
+                current_x = elem['center_x']
                 for next_elem in header_elements[i:]:
                     if abs(next_elem['center_y'] - current_y) < 20:  # Cùng dòng
                         next_text = next_elem['text'].strip()
-                        # Kiểm tra nếu text là số
+                        # Kiểm tra nếu text là số và nằm trong khoảng cách cho phép
                         if next_text.isdigit():
-                            ma_ncc = next_text
-                            print(f"Tìm thấy mã nhà cung cấp: {ma_ncc}")
-                            break
+                            # Kiểm tra khoảng cách ngang giữa từ khóa và số
+                            if abs(next_elem['center_x'] - current_x) < 200:  # Giới hạn khoảng cách 200 pixel
+                                ma_ncc = next_text
+                                print(f"Tìm thấy mã nhà cung cấp: {ma_ncc}")
+                                break
                 if ma_ncc:  # Nếu đã tìm thấy thì dừng
                     break
         
@@ -672,6 +675,7 @@ def detect_text(supplier_keywords=None, invoice_keywords=None, product_code_keyw
             if check_keywords_flexible(text, invoice_keywords):
                 # Tìm số trong cùng dòng
                 current_y = elem['center_y']
+                current_x = elem['center_x']
                 # Lấy tất cả text elements trên cùng một dòng
                 same_line_elements = [e for e in header_elements 
                                     if abs(e['center_y'] - current_y) < 20]
@@ -684,10 +688,13 @@ def detect_text(supplier_keywords=None, invoice_keywords=None, product_code_keyw
                 # Kiểm tra các phần tử phía sau trong cùng dòng
                 for next_elem in same_line_elements[current_index:]:
                     next_text = next_elem['text'].strip()
+                    # Kiểm tra nếu text là số và nằm trong khoảng cách cho phép
                     if next_text.isdigit():
-                        so_don_hang = next_text
-                        print(f"Tìm thấy số đơn hàng: {so_don_hang}")
-                        break
+                        # Kiểm tra khoảng cách ngang giữa từ khóa và số
+                        if abs(next_elem['center_x'] - current_x) < 200:  # Giới hạn khoảng cách 200 pixel
+                            so_don_hang = next_text
+                            print(f"Tìm thấy số đơn hàng: {so_don_hang}")
+                            break
                 if so_don_hang:  # Nếu đã tìm thấy thì dừng
                     break
 

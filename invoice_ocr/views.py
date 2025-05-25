@@ -417,8 +417,7 @@ def report(request):
         total_products = receipt_details.aggregate(Sum('quantity'))['quantity__sum'] or 0
         
         # Danh sách nhà cung cấp đã nhập hàng
-        supplier_ids = reports.values_list('supplier_id', flat=True).distinct()
-        total_suppliers = len(supplier_ids)
+        total_suppliers = reports.values('supplier_id').distinct().count()
         
         # Tính tỉ lệ sản phẩm theo danh mục
         category_stats = receipt_details.values(
